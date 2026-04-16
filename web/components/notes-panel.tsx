@@ -1,0 +1,54 @@
+"use client"
+
+import { useState } from "react"
+import { Save, Loader2 } from "lucide-react"
+
+interface NotesPanelProps {
+  notes: string
+  onSave: (notes: string) => Promise<void>
+}
+
+export default function NotesPanel({ notes: initialNotes, onSave }: NotesPanelProps) {
+  const [notes, setNotes] = useState(initialNotes)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave() {
+    setIsSaving(true)
+    setSaved(false)
+    try {
+      await onSave(notes)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="font-serif font-semibold text-gray-900">Call Notes</h3>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={handleSave}
+        placeholder="Add notes from your call..."
+        className="w-full h-48 text-sm p-3 rounded-lg border border-gray-200 bg-white/80
+                   placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40
+                   resize-none"
+      />
+      <button
+        onClick={handleSave}
+        disabled={isSaving}
+        className="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50 transition"
+      >
+        {isSaving ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Save className="w-4 h-4" />
+        )}
+        {saved ? "Saved!" : isSaving ? "Saving..." : "Save Notes"}
+      </button>
+    </div>
+  )
+}
