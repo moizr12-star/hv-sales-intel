@@ -7,7 +7,7 @@ import { mockPractices } from "@/lib/mock-data"
 import TopBar from "@/components/top-bar"
 import PracticeCard from "@/components/practice-card"
 import FilterBar from "@/components/filter-bar"
-import { searchPractices } from "@/lib/api"
+import { searchPractices, analyzePractice } from "@/lib/api"
 
 const MapView = dynamic(() => import("@/components/map-view"), { ssr: false })
 
@@ -18,6 +18,8 @@ export default function Page() {
   const [cityLabel, setCityLabel] = useState("")
   const [category, setCategory] = useState("")
   const [minRating, setMinRating] = useState(0)
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
+  const [scoreProgress, setScoreProgress] = useState<string | null>(null)
 
   const handleSearch = useCallback(async (query: string) => {
     setIsLoading(true)
@@ -31,17 +33,68 @@ export default function Page() {
     }
   }, [])
 
+  const handleAnalyze = useCallback(async (placeId: string) => {
+    setAnalyzingIds((prev) => new Set(prev).add(placeId))
+    try {
+      const updated = await analyzePractice(placeId)
+      setPractices((prev) =>
+        prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
+      )
+    } finally {
+      setAnalyzingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(placeId)
+        return next
+      })
+    }
+  }, [])
+
+  const handleScoreAll = useCallback(async () => {
+    const unscored = practices.filter((p) => p.lead_score == null)
+    if (unscored.length === 0) return
+
+    for (let i = 0; i < unscored.length; i++) {
+      setScoreProgress(`Scoring ${i + 1}/${unscored.length}...`)
+      const placeId = unscored[i].place_id
+      setAnalyzingIds((prev) => new Set(prev).add(placeId))
+      try {
+        const updated = await analyzePractice(placeId)
+        setPractices((prev) =>
+          prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
+        )
+      } finally {
+        setAnalyzingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(placeId)
+          return next
+        })
+      }
+    }
+    setScoreProgress(null)
+  }, [practices])
+
   const filtered = useMemo(() => {
-    return practices.filter((p) => {
+    const list = practices.filter((p) => {
       if (category && p.category !== category) return false
       if (minRating && (p.rating ?? 0) < minRating) return false
       return true
+    })
+    // Sort: scored practices first (by lead_score desc), then unscored
+    return list.sort((a, b) => {
+      const aScore = a.lead_score ?? -1
+      const bScore = b.lead_score ?? -1
+      return bScore - aScore
     })
   }, [practices, category, minRating])
 
   return (
     <div className="h-screen w-screen overflow-hidden">
-      <TopBar onSearch={handleSearch} isLoading={isLoading} />
+      <TopBar
+        onSearch={handleSearch}
+        isLoading={isLoading}
+        onScoreAll={handleScoreAll}
+        scoreProgress={scoreProgress}
+      />
 
       <main className="relative w-full h-full pt-14">
         {/* Sidebar */}
@@ -72,6 +125,8 @@ export default function Page() {
                   practice={p}
                   isSelected={selectedId === p.place_id}
                   onSelect={setSelectedId}
+                  onAnalyze={handleAnalyze}
+                  isAnalyzing={analyzingIds.has(p.place_id)}
                 />
               ))
             )}
