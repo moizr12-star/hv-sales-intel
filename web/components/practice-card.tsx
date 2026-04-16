@@ -1,10 +1,12 @@
 "use client"
 
-import { Phone, Globe, Star, Brain, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { Phone, Globe, Star, Brain, Loader2, FileText } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import ScoreBar from "./score-bar"
+import StatusBadge from "./status-badge"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -69,10 +71,17 @@ export default function PracticeCard({
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-serif font-semibold text-gray-900 text-base leading-tight">
+        <Link
+          href={`/practice/${practice.place_id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="font-serif font-semibold text-gray-900 text-base leading-tight hover:text-teal-700 transition"
+        >
           {practice.name}
-        </h3>
-        {isScored && <ScoreBadge score={practice.lead_score!} />}
+        </Link>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <StatusBadge status={practice.status} />
+          {isScored && <ScoreBadge score={practice.lead_score!} />}
+        </div>
       </div>
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
 
@@ -90,7 +99,7 @@ export default function PracticeCard({
       )}
 
       {/* Action buttons */}
-      <div className="flex gap-2 mt-3">
+      <div className="flex gap-2 mt-3 flex-wrap">
         {practice.phone && (
           <a
             href={`tel:${practice.phone}`}
@@ -126,6 +135,13 @@ export default function PracticeCard({
           )}
           {isAnalyzing ? "Analyzing..." : isScored ? "Re-analyze" : "Analyze"}
         </button>
+        <Link
+          href={`/practice/${practice.place_id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition"
+        >
+          <FileText className="w-3 h-3" /> Call Prep
+        </Link>
       </div>
 
       {/* Inline analysis results */}
