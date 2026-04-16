@@ -13,4 +13,23 @@ export interface Practice {
   lng: number | null
   opening_hours: string | null
   status: string
+
+  // Phase 2 (AI analysis) — optional, absent on unscored practices
+  summary?: string | null
+  pain_points?: string | null  // JSON string of string[]
+  sales_angles?: string | null // JSON string of string[]
+  lead_score?: number | null
+  urgency_score?: number | null
+  hiring_signal_score?: number | null
+}
+
+/** Parse a JSON string array field, returning [] on failure. */
+export function parseJsonArray(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
