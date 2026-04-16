@@ -45,3 +45,45 @@ export async function listPractices(params?: {
     return mockPractices
   }
 }
+
+export async function analyzePractice(
+  placeId: string,
+  force?: boolean
+): Promise<Practice> {
+  try {
+    return await apiFetch<Practice>(`/api/practices/${placeId}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: force ?? false }),
+    })
+  } catch {
+    return mockAnalysis(placeId)
+  }
+}
+
+function mockAnalysis(placeId: string): Practice {
+  const practice = mockPractices.find((p) => p.place_id === placeId) ?? mockPractices[0]
+  const hiring = Math.floor(Math.random() * 70) + 25
+  const urgency = Math.floor(Math.random() * 60) + 20
+  const lead = Math.min(100, Math.floor(hiring * 0.5 + urgency * 0.3 + Math.random() * 20))
+
+  const painPoints = [
+    "Reviews mention long wait times and difficulty reaching the office",
+    "Website shows open positions unfilled for several weeks",
+    "Patients report staff seeming overwhelmed during visits",
+  ]
+  const salesAngles = [
+    "Pitch trained front desk staff to handle scheduling overflow",
+    "Propose medical assistant staffing to reduce provider burnout",
+  ]
+
+  return {
+    ...practice,
+    summary: `${practice.name} shows staffing challenges typical of ${(practice.category ?? "healthcare").replace("_", " ")} practices. Opportunities exist for Health & Virtuals staffing solutions.`,
+    pain_points: JSON.stringify(painPoints),
+    sales_angles: JSON.stringify(salesAngles),
+    lead_score: lead,
+    urgency_score: urgency,
+    hiring_signal_score: hiring,
+  }
+}
