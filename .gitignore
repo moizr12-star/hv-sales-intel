@@ -1,0 +1,6 @@
+.superpowers/
+.env
+.env.local
+node_modules/
+__pycache__/
+*.pyc
