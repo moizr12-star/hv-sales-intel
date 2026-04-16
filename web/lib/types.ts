@@ -21,6 +21,20 @@ export interface Practice {
   lead_score?: number | null
   urgency_score?: number | null
   hiring_signal_score?: number | null
+
+  // Phase 3 (Call Playbook)
+  call_script?: string | null // JSON string of Script
+  notes?: string | null
+}
+
+export interface ScriptSection {
+  title: string
+  icon: string
+  content: string
+}
+
+export interface Script {
+  sections: ScriptSection[]
 }
 
 /** Parse a JSON string array field, returning [] on failure. */
