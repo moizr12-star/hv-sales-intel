@@ -6,8 +6,14 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import type { Practice } from "@/lib/types"
 
-function createPinIcon(rating: number | null): L.DivIcon {
+function createPinIcon(rating: number | null, leadScore: number | null): L.DivIcon {
   const label = rating ? rating.toFixed(1) : "\u2014"
+  let fill = "#0d9488" // teal (default / unscored / 0-49)
+  if (leadScore != null && leadScore >= 75) {
+    fill = "#e11d48" // rose (hot lead)
+  } else if (leadScore != null && leadScore >= 50) {
+    fill = "#f59e0b" // amber
+  }
   return L.divIcon({
     className: "",
     iconSize: [32, 42],
@@ -16,7 +22,7 @@ function createPinIcon(rating: number | null): L.DivIcon {
     html: `
       <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
         <path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 26 16 26s16-14 16-26C32 7.16 24.84 0 16 0z"
-              fill="#0d9488" stroke="#fff" stroke-width="1.5"/>
+              fill="${fill}" stroke="#fff" stroke-width="1.5"/>
         <text x="16" y="18" text-anchor="middle" fill="white"
               font-family="system-ui" font-size="10" font-weight="600">${label}</text>
       </svg>
@@ -71,7 +77,7 @@ export default function MapView({ practices, selectedId, onSelect }: MapViewProp
           <Marker
             key={p.place_id}
             position={[p.lat!, p.lng!]}
-            icon={createPinIcon(p.rating)}
+            icon={createPinIcon(p.rating, p.lead_score ?? null)}
             ref={(ref) => {
               if (ref) markerRefs.current[p.place_id] = ref
             }}
