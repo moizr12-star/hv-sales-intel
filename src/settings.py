@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
 
     class Config:
         env_file = ".env"
