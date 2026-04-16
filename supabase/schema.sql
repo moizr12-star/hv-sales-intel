@@ -24,6 +24,9 @@ create table if not exists practices (
   urgency_score int,
   hiring_signal_score int,
 
+  -- Phase 3 (Call Playbook + CRM)
+  call_script text,
+
   -- Phase 3 (CRM) — columns exist but nullable
   status text default 'NEW',
   notes text,
