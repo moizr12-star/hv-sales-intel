@@ -1,10 +1,19 @@
+import json
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
 from src.places import search_places
-from src.storage import upsert_practices, query_practices, get_practice, update_practice_analysis
+from src.scriptgen import generate_script
+from src.storage import (
+    upsert_practices,
+    query_practices,
+    get_practice,
+    update_practice_analysis,
+    update_practice_fields,
+)
 
 app = FastAPI(title="HV Sales Intel", version="0.1.0")
 
@@ -14,6 +23,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Status ordering for auto-transitions
+STATUS_ORDER = [
+    "NEW", "RESEARCHED", "SCRIPT READY", "CONTACTED",
+    "FOLLOW UP", "MEETING SET", "PROPOSAL", "CLOSED WON", "CLOSED LOST",
+]
+
+
+def _should_auto_advance(current: str, target: str) -> bool:
+    """Return True if target is ahead of current in the pipeline."""
+    try:
+        return STATUS_ORDER.index(target) > STATUS_ORDER.index(current)
+    except ValueError:
+        return False
 
 
 @app.get("/api/health")
@@ -67,14 +90,11 @@ async def analyze(place_id: str, body: AnalyzeRequest | None = None):
     """Analyze a practice: crawl website, fetch reviews, run GPT-4o."""
     force = body.force if body else False
 
-    # Try to get existing practice from Supabase
     existing = get_practice(place_id)
 
-    # If already analyzed and not forcing, return cached
     if existing and existing.get("lead_score") is not None and not force:
         return existing
 
-    # Get practice info for the analyzer
     if existing:
         name = existing["name"]
         website = existing.get("website")
@@ -84,15 +104,93 @@ async def analyze(place_id: str, body: AnalyzeRequest | None = None):
         website = None
         category = None
 
-    # Run analysis
     analysis = await analyze_practice(place_id, name, website, category)
 
-    # Upsert the analysis fields into Supabase
+    # Auto-advance status to RESEARCHED
+    if existing:
+        current_status = existing.get("status", "NEW")
+        if _should_auto_advance(current_status, "RESEARCHED"):
+            analysis["status"] = "RESEARCHED"
+
     updated = update_practice_analysis(place_id, analysis)
     if updated:
         return updated
 
-    # If Supabase not configured, merge analysis into existing data or return standalone
     if existing:
         return {**existing, **analysis}
     return {"place_id": place_id, "name": name, **analysis}
+
+
+@app.get("/api/practices/{place_id}/script")
+async def get_script(place_id: str):
+    """Get or generate the call script for a practice."""
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+
+    # Return cached script if it exists
+    if practice.get("call_script"):
+        return json.loads(practice["call_script"])
+
+    # Generate new script
+    script = await generate_script(
+        name=practice["name"],
+        category=practice.get("category"),
+        summary=practice.get("summary"),
+        pain_points=practice.get("pain_points"),
+        sales_angles=practice.get("sales_angles"),
+    )
+
+    # Store script
+    update_practice_fields(place_id, {"call_script": json.dumps(script)})
+
+    # Auto-advance status to SCRIPT READY
+    current_status = practice.get("status", "NEW")
+    if _should_auto_advance(current_status, "SCRIPT READY"):
+        update_practice_fields(place_id, {"status": "SCRIPT READY"})
+
+    return script
+
+
+@app.post("/api/practices/{place_id}/script")
+async def regenerate_script_endpoint(place_id: str):
+    """Force regenerate the call script."""
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+
+    script = await generate_script(
+        name=practice["name"],
+        category=practice.get("category"),
+        summary=practice.get("summary"),
+        pain_points=practice.get("pain_points"),
+        sales_angles=practice.get("sales_angles"),
+    )
+
+    update_practice_fields(place_id, {"call_script": json.dumps(script)})
+
+    return script
+
+
+class PatchPracticeRequest(BaseModel):
+    status: str | None = None
+    notes: str | None = None
+
+
+@app.patch("/api/practices/{place_id}")
+def patch_practice(place_id: str, body: PatchPracticeRequest):
+    """Update status and/or notes for a practice."""
+    fields: dict = {}
+    if body.status is not None:
+        if body.status not in STATUS_ORDER:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}")
+        fields["status"] = body.status
+    if body.notes is not None:
+        fields["notes"] = body.notes
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    updated = update_practice_fields(place_id, fields)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    return updated
