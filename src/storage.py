@@ -50,3 +50,17 @@ def get_practice(place_id: str) -> dict | None:
         return None
     result = client.table("practices").select("*").eq("place_id", place_id).single().execute()
     return result.data
+
+
+def update_practice_analysis(place_id: str, analysis: dict) -> dict | None:
+    """Update Phase 2 analysis fields for a practice. Returns updated row or None."""
+    client = _get_client()
+    if not client:
+        return None
+    result = (
+        client.table("practices")
+        .update(analysis)
+        .eq("place_id", place_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
