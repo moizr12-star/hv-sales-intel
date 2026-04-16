@@ -64,3 +64,17 @@ def update_practice_analysis(place_id: str, analysis: dict) -> dict | None:
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def update_practice_fields(place_id: str, fields: dict) -> dict | None:
+    """Update arbitrary fields on a practice. Returns updated row or None."""
+    client = _get_client()
+    if not client:
+        return None
+    result = (
+        client.table("practices")
+        .update(fields)
+        .eq("place_id", place_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
