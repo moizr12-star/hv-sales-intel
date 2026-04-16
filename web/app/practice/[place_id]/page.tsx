@@ -1,0 +1,149 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { useParams, useRouter } from "next/navigation"
+import { ArrowLeft } from "lucide-react"
+import type { Practice, ScriptSection } from "@/lib/types"
+import { getScript, regenerateScript, updatePractice } from "@/lib/api"
+import { mockPractices } from "@/lib/mock-data"
+import PracticeInfo from "@/components/practice-info"
+import ScriptView from "@/components/script-view"
+import NotesPanel from "@/components/notes-panel"
+import StatusBadge, { ALL_STATUSES } from "@/components/status-badge"
+
+export default function CallPrepPage() {
+  const params = useParams()
+  const router = useRouter()
+  const placeId = params.place_id as string
+
+  const [practice, setPractice] = useState<Practice | null>(null)
+  const [sections, setSections] = useState<ScriptSection[]>([])
+  const [isLoadingScript, setIsLoadingScript] = useState(true)
+
+  // Load practice data
+  useEffect(() => {
+    async function load() {
+      let loaded = false
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
+        if (API_URL) {
+          const res = await fetch(`${API_URL}/api/practices/${placeId}`)
+          if (res.ok) {
+            setPractice(await res.json())
+            loaded = true
+          }
+        }
+      } catch {
+        // fallback below
+      }
+
+      if (!loaded) {
+        const mock = mockPractices.find((p) => p.place_id === placeId) ?? mockPractices[0]
+        setPractice(mock)
+      }
+    }
+    load()
+  }, [placeId])
+
+  // Load script
+  useEffect(() => {
+    async function loadScript() {
+      setIsLoadingScript(true)
+      try {
+        const script = await getScript(placeId)
+        setSections(script.sections)
+      } finally {
+        setIsLoadingScript(false)
+      }
+    }
+    loadScript()
+  }, [placeId])
+
+  const handleRegenerate = useCallback(async () => {
+    setIsLoadingScript(true)
+    try {
+      const script = await regenerateScript(placeId)
+      setSections(script.sections)
+    } finally {
+      setIsLoadingScript(false)
+    }
+  }, [placeId])
+
+  const handleStatusChange = useCallback(async (newStatus: string) => {
+    const updated = await updatePractice(placeId, { status: newStatus })
+    setPractice((prev) => (prev ? { ...prev, ...updated } : prev))
+  }, [placeId])
+
+  const handleSaveNotes = useCallback(async (notes: string) => {
+    const updated = await updatePractice(placeId, { notes })
+    setPractice((prev) => (prev ? { ...prev, ...updated } : prev))
+  }, [placeId])
+
+  if (!practice) {
+    return (
+      <div className="min-h-screen bg-cream flex items-center justify-center">
+        <p className="text-gray-400">Loading...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-cream">
+      {/* Header */}
+      <header className="sticky top-0 z-20 h-14 flex items-center justify-between px-6 bg-white/70 backdrop-blur-md border-b border-gray-200/50">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => router.push("/")}
+            className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Map
+          </button>
+          <span className="font-serif text-lg font-bold text-teal-700 tracking-tight">
+            Health&amp;Virtuals
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500">Status:</span>
+          <select
+            value={practice.status}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            className="text-sm rounded-lg border border-gray-200 bg-white/80 px-3 py-1.5
+                       focus:outline-none focus:ring-2 focus:ring-teal-500/40"
+          >
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <StatusBadge status={practice.status} />
+        </div>
+      </header>
+
+      {/* Three-column layout */}
+      <div className="flex h-[calc(100vh-3.5rem)]">
+        {/* Left: Practice Info */}
+        <aside className="w-[280px] shrink-0 overflow-y-auto p-5 border-r border-gray-200/50">
+          <PracticeInfo practice={practice} />
+        </aside>
+
+        {/* Center: Call Playbook */}
+        <main className="flex-1 overflow-y-auto p-6">
+          <h2 className="font-serif text-xl font-bold text-gray-900 mb-6">Call Playbook</h2>
+          <ScriptView
+            sections={sections}
+            isLoading={isLoadingScript}
+            onRegenerate={handleRegenerate}
+          />
+        </main>
+
+        {/* Right: Notes & Actions */}
+        <aside className="w-[320px] shrink-0 overflow-y-auto p-5 border-l border-gray-200/50">
+          <NotesPanel
+            notes={practice.notes ?? ""}
+            onSave={handleSaveNotes}
+          />
+        </aside>
+      </div>
+    </div>
+  )
+}
