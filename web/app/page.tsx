@@ -18,6 +18,7 @@ export default function Page() {
   const [cityLabel, setCityLabel] = useState("")
   const [category, setCategory] = useState("")
   const [minRating, setMinRating] = useState(0)
+  const [statusFilter, setStatusFilter] = useState("ACTIVE")
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [scoreProgress, setScoreProgress] = useState<string | null>(null)
 
@@ -77,15 +78,16 @@ export default function Page() {
     const list = practices.filter((p) => {
       if (category && p.category !== category) return false
       if (minRating && (p.rating ?? 0) < minRating) return false
+      if (statusFilter === "ACTIVE" && p.status === "CLOSED LOST") return false
+      if (statusFilter && statusFilter !== "ACTIVE" && p.status !== statusFilter) return false
       return true
     })
-    // Sort: scored practices first (by lead_score desc), then unscored
     return list.sort((a, b) => {
       const aScore = a.lead_score ?? -1
       const bScore = b.lead_score ?? -1
       return bScore - aScore
     })
-  }, [practices, category, minRating])
+  }, [practices, category, minRating, statusFilter])
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -112,6 +114,8 @@ export default function Page() {
             onCategoryChange={setCategory}
             minRating={minRating}
             onMinRatingChange={setMinRating}
+            status={statusFilter}
+            onStatusChange={setStatusFilter}
           />
           <div className="flex-1 overflow-y-auto sidebar-scroll p-3 space-y-2">
             {filtered.length === 0 ? (
