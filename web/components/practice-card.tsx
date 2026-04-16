@@ -1,6 +1,10 @@
-import { Phone, Globe, Star } from "lucide-react"
+"use client"
+
+import { Phone, Globe, Star, Brain, Loader2 } from "lucide-react"
 import type { Practice } from "@/lib/types"
+import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import ScoreBar from "./score-bar"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -21,25 +25,55 @@ function StarRating({ rating }: { rating: number | null }) {
   )
 }
 
+function ScoreBadge({ score }: { score: number }) {
+  const color =
+    score >= 75
+      ? "bg-rose-100 text-rose-700"
+      : score >= 50
+        ? "bg-amber-100 text-amber-700"
+        : "bg-teal-100 text-teal-700"
+  return (
+    <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded-full", color)}>
+      {score}
+    </span>
+  )
+}
+
 interface PracticeCardProps {
   practice: Practice
   isSelected: boolean
   onSelect: (placeId: string) => void
+  onAnalyze: (placeId: string) => void
+  isAnalyzing: boolean
 }
 
-export default function PracticeCard({ practice, isSelected, onSelect }: PracticeCardProps) {
+export default function PracticeCard({
+  practice,
+  isSelected,
+  onSelect,
+  onAnalyze,
+  isAnalyzing,
+}: PracticeCardProps) {
+  const isScored = practice.lead_score != null
+  const painPoints = parseJsonArray(practice.pain_points ?? null)
+  const salesAngles = parseJsonArray(practice.sales_angles ?? null)
+
   return (
-    <button
+    <div
       onClick={() => onSelect(practice.place_id)}
       className={cn(
-        "w-full text-left p-4 rounded-xl transition-all",
+        "w-full text-left p-4 rounded-xl transition-all cursor-pointer",
         "hover:bg-ivory-200/60",
         isSelected ? "bg-teal-50 ring-1 ring-teal-600/30" : "bg-white/60"
       )}
     >
-      <h3 className="font-serif font-semibold text-gray-900 text-base leading-tight">
-        {practice.name}
-      </h3>
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-serif font-semibold text-gray-900 text-base leading-tight">
+          {practice.name}
+        </h3>
+        {isScored && <ScoreBadge score={practice.lead_score!} />}
+      </div>
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
 
       <div className="flex items-center gap-3 mt-2">
@@ -55,6 +89,7 @@ export default function PracticeCard({ practice, isSelected, onSelect }: Practic
         </span>
       )}
 
+      {/* Action buttons */}
       <div className="flex gap-2 mt-3">
         {practice.phone && (
           <a
@@ -76,7 +111,65 @@ export default function PracticeCard({ practice, isSelected, onSelect }: Practic
             <Globe className="w-3 h-3" /> Website
           </a>
         )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onAnalyze(practice.place_id)
+          }}
+          disabled={isAnalyzing}
+          className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 transition"
+        >
+          {isAnalyzing ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Brain className="w-3 h-3" />
+          )}
+          {isAnalyzing ? "Analyzing..." : isScored ? "Re-analyze" : "Analyze"}
+        </button>
       </div>
-    </button>
+
+      {/* Inline analysis results */}
+      {isScored && (
+        <div className="mt-3 pt-3 border-t border-gray-200/50 space-y-3">
+          {practice.summary && (
+            <p className="text-xs text-gray-600 leading-relaxed">{practice.summary}</p>
+          )}
+
+          {painPoints.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-700 mb-1">Pain Points</h4>
+              <ul className="space-y-0.5">
+                {painPoints.map((p, i) => (
+                  <li key={i} className="text-xs text-gray-500 flex gap-1.5">
+                    <span className="text-rose-400 shrink-0">&bull;</span>
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {salesAngles.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-700 mb-1">Sales Angles</h4>
+              <ul className="space-y-0.5">
+                {salesAngles.map((a, i) => (
+                  <li key={i} className="text-xs text-gray-500 flex gap-1.5">
+                    <span className="text-teal-500 shrink-0">&rarr;</span>
+                    {a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <ScoreBar label="Lead" value={practice.lead_score!} />
+            <ScoreBar label="Urgency" value={practice.urgency_score!} />
+            <ScoreBar label="Hiring" value={practice.hiring_signal_score!} />
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
