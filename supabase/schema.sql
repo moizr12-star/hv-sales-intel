@@ -39,3 +39,33 @@ create index if not exists idx_practices_place_id on practices (place_id);
 create index if not exists idx_practices_category on practices (category);
 create index if not exists idx_practices_city on practices (city);
 create index if not exists idx_practices_score on practices (lead_score desc nulls last);
+
+-- Auth + user attribution
+
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  name text,
+  role text not null default 'rep' check (role in ('admin', 'rep')),
+  created_at timestamptz default now()
+);
+
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.profiles (id, email, name, role)
+  values (new.id, new.email, new.raw_user_meta_data->>'name', 'rep')
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+alter table practices add column if not exists last_touched_by uuid references profiles(id);
+alter table practices add column if not exists last_touched_at timestamptz;
+
+create index if not exists idx_profiles_role on profiles (role);
