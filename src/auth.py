@@ -51,6 +51,14 @@ def _read_supabase_token(request: Request) -> str | None:
     candidates.extend(singles.values())
 
     for raw in candidates:
+        # Newer @supabase/ssr prefixes the value with `base64-` and stores the
+        # JSON blob base64-encoded. Older versions store the JSON directly.
+        if raw.startswith("base64-"):
+            import base64
+            try:
+                raw = base64.b64decode(raw[len("base64-"):]).decode("utf-8")
+            except Exception:
+                continue
         try:
             decoded = json.loads(raw)
         except json.JSONDecodeError:

@@ -34,6 +34,14 @@ def test_read_token_returns_none_on_malformed_cookie():
     assert _read_supabase_token(req) is None
 
 
+def test_read_token_decodes_base64_prefixed_cookie():
+    import base64
+    payload = '{"access_token":"abc.def.ghi","refresh_token":"r"}'
+    encoded = "base64-" + base64.b64encode(payload.encode()).decode()
+    req = _mock_request({"sb-proj-auth-token": encoded})
+    assert _read_supabase_token(req) == "abc.def.ghi"
+
+
 from unittest.mock import patch
 
 import pytest
