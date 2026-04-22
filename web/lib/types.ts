@@ -26,10 +26,33 @@ export interface Practice {
   call_script?: string | null // JSON string of Script
   notes?: string | null
 
+  // Email outreach
+  email: string | null
+  email_draft: string | null
+  email_draft_updated_at: string | null
+
   // Attribution (last-touched)
   last_touched_by: string | null
   last_touched_by_name: string | null
   last_touched_at: string | null
+}
+
+export interface EmailMessage {
+  id: number
+  practice_id: number
+  user_id: string | null
+  direction: "out" | "in"
+  subject: string | null
+  body: string | null
+  message_id: string | null
+  in_reply_to: string | null
+  sent_at: string
+  error: string | null
+}
+
+export interface EmailDraft {
+  subject: string
+  body: string
 }
 
 export interface ScriptSection {

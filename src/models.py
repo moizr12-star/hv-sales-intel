@@ -29,6 +29,11 @@ class Practice(BaseModel):
     status: str = "NEW"
     notes: str | None = None
 
+    # Email outreach
+    email: str | None = None
+    email_draft: str | None = None
+    email_draft_updated_at: str | None = None
+
     # Attribution
     last_touched_by: str | None = None
     last_touched_by_name: str | None = None
