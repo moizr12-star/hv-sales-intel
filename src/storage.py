@@ -147,3 +147,59 @@ def update_practice_fields(
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def insert_email_message(
+    practice_id: int,
+    user_id: str | None,
+    direction: str,
+    subject: str | None,
+    body: str | None,
+    message_id: str | None,
+    in_reply_to: str | None,
+    error: str | None,
+) -> dict | None:
+    """Insert a row into email_messages. Returns the inserted row."""
+    client = _get_client()
+    if not client:
+        return None
+    row = {
+        "practice_id": practice_id,
+        "user_id": user_id,
+        "direction": direction,
+        "subject": subject,
+        "body": body,
+        "message_id": message_id,
+        "in_reply_to": in_reply_to,
+        "error": error,
+    }
+    result = client.table("email_messages").insert(row).execute()
+    return result.data[0] if result.data else None
+
+
+def list_email_messages(practice_id: int) -> list[dict]:
+    """List email messages for a practice, oldest first."""
+    client = _get_client()
+    if not client:
+        return []
+    result = (
+        client.table("email_messages").select("*")
+        .eq("practice_id", practice_id)
+        .order("sent_at")
+        .execute()
+    )
+    return result.data or []
+
+
+def list_outbound_message_ids(practice_id: int) -> list[str]:
+    """Return all outbound message_ids for a practice (used by poll threading)."""
+    client = _get_client()
+    if not client:
+        return []
+    result = (
+        client.table("email_messages").select("message_id")
+        .eq("practice_id", practice_id)
+        .eq("direction", "out")
+        .execute()
+    )
+    return [r["message_id"] for r in (result.data or []) if r.get("message_id")]
