@@ -27,6 +27,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+async def bootstrap_admin_on_startup():
+    """If no admin exists and BOOTSTRAP_ADMIN_* env vars are set, seed one."""
+    from src.settings import settings
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        return
+    if not (settings.bootstrap_admin_email and settings.bootstrap_admin_password):
+        return
+    try:
+        client = get_admin_client()
+        existing = client.table("profiles").select("id").eq("role", "admin").execute()
+        if existing.data:
+            return
+        created = client.auth.admin.create_user({
+            "email": settings.bootstrap_admin_email,
+            "password": settings.bootstrap_admin_password,
+            "email_confirm": True,
+            "user_metadata": {"name": "Bootstrap Admin"},
+        })
+        client.table("profiles").update({"role": "admin"}).eq("id", created.user.id).execute()
+        print(f"[bootstrap] Seeded admin: {settings.bootstrap_admin_email}")
+    except Exception as e:
+        print(f"[bootstrap] Skipped ({e!r})")
+
+
 STATUS_ORDER = [
     "NEW", "RESEARCHED", "SCRIPT READY", "CONTACTED",
     "FOLLOW UP", "MEETING SET", "PROPOSAL", "CLOSED WON", "CLOSED LOST",
