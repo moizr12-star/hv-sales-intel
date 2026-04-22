@@ -10,6 +10,8 @@ import { timeAgo } from "@/lib/utils"
 import PracticeInfo from "@/components/practice-info"
 import ScriptView from "@/components/script-view"
 import NotesPanel from "@/components/notes-panel"
+import ActionsPanel from "@/components/actions-panel"
+import EmailPanel from "@/components/email-panel"
 import StatusBadge, { ALL_STATUSES } from "@/components/status-badge"
 
 export default function CallPrepPage() {
@@ -142,11 +144,40 @@ export default function CallPrepPage() {
           />
         </main>
 
-        {/* Right: Notes & Actions */}
-        <aside className="w-[320px] shrink-0 overflow-y-auto p-5 border-l border-gray-200/50">
-          <NotesPanel
-            notes={practice.notes ?? ""}
-            onSave={handleSaveNotes}
+        {/* Right: Tabbed actions panel */}
+        <aside className="w-[340px] shrink-0 overflow-y-auto p-5 border-l border-gray-200/50">
+          <ActionsPanel
+            defaultTab="notes"
+            tabs={[
+              { id: "notes", label: "Notes" },
+              { id: "email", label: "Email" },
+              { id: "activity", label: "Activity", disabled: true },
+            ]}
+            renderTab={(id) => {
+              if (id === "notes") {
+                return (
+                  <NotesPanel
+                    notes={practice.notes ?? ""}
+                    onSave={handleSaveNotes}
+                  />
+                )
+              }
+              if (id === "email") {
+                return (
+                  <EmailPanel
+                    practice={practice}
+                    onPracticeUpdate={(next) =>
+                      setPractice((prev) => (prev ? { ...prev, ...next } : prev))
+                    }
+                  />
+                )
+              }
+              return (
+                <p className="text-xs text-gray-400">
+                  Activity history — coming soon.
+                </p>
+              )
+            }}
           />
         </aside>
       </div>
