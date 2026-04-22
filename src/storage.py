@@ -73,15 +73,18 @@ def query_practices(
 
 
 def get_practice(place_id: str) -> dict | None:
-    """Get single practice with profile join."""
+    """Get single practice with profile join. Returns None if not found."""
     client = _get_client()
     if not client:
         return None
-    result = (
-        client.table("practices").select(PROFILE_JOIN_SELECT)
-        .eq("place_id", place_id).single().execute()
-    )
-    return _flatten_attribution(result.data) if result.data else None
+    try:
+        result = (
+            client.table("practices").select(PROFILE_JOIN_SELECT)
+            .eq("place_id", place_id).maybe_single().execute()
+        )
+    except Exception:
+        return None
+    return _flatten_attribution(result.data) if result and result.data else None
 
 
 def update_practice_analysis(
