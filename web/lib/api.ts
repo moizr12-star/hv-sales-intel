@@ -5,7 +5,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_URL) throw new Error("NO_API")
-  const res = await fetch(`${API_URL}${path}`, init)
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    credentials: "include",
+  })
+  if (res.status === 401 && typeof window !== "undefined") {
+    const redirect = encodeURIComponent(window.location.pathname)
+    window.location.href = `/login?redirect=${redirect}`
+    throw new Error("API 401")
+  }
   if (!res.ok) throw new Error(`API ${res.status}`)
   return res.json()
 }
