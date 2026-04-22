@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Globe, Star, Brain, Loader2, FileText } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import { parseJsonArray } from "@/lib/types"
-import { cn } from "@/lib/utils"
+import { cn, timeAgo } from "@/lib/utils"
 import ScoreBar from "./score-bar"
 import StatusBadge from "./status-badge"
 import CallButton from "./call-button"
@@ -84,6 +84,11 @@ export default function PracticeCard({
           {isScored && <ScoreBadge score={practice.lead_score!} />}
         </div>
       </div>
+      {practice.last_touched_by_name && practice.last_touched_at && (
+        <p className="text-[11px] text-gray-400 mt-1">
+          Last touched by {practice.last_touched_by_name} · {timeAgo(practice.last_touched_at)}
+        </p>
+      )}
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
 
       <div className="flex items-center gap-3 mt-2">

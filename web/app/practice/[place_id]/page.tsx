@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react"
 import type { Practice, ScriptSection } from "@/lib/types"
 import { getScript, regenerateScript, updatePractice } from "@/lib/api"
 import { mockPractices } from "@/lib/mock-data"
+import { timeAgo } from "@/lib/utils"
 import PracticeInfo from "@/components/practice-info"
 import ScriptView from "@/components/script-view"
 import NotesPanel from "@/components/notes-panel"
@@ -116,6 +117,11 @@ export default function CallPrepPage() {
             ))}
           </select>
           <StatusBadge status={practice.status} />
+          {practice.last_touched_by_name && practice.last_touched_at && (
+            <span className="text-xs text-gray-400">
+              by {practice.last_touched_by_name} · {timeAgo(practice.last_touched_at)}
+            </span>
+          )}
         </div>
       </header>
 
