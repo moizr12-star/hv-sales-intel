@@ -1,4 +1,4 @@
-import type { Practice, Script } from "./types"
+import type { EmailDraft, EmailMessage, Practice, Script } from "./types"
 import { mockPractices } from "./mock-data"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
@@ -155,4 +155,83 @@ function mockScript(placeId: string): Script {
       { title: "Closing", icon: "check", content: "I'd love to set up a 15-minute call to learn more about your practice and share how we've helped similar offices. We also offer a free staffing assessment. Would later this week work?" },
     ],
   }
+}
+
+// ======================= Email outreach =======================
+
+export async function getEmailDraft(placeId: string): Promise<EmailDraft> {
+  try {
+    return await apiFetch<EmailDraft>(`/api/practices/${placeId}/email/draft`)
+  } catch {
+    return { subject: "", body: "" }
+  }
+}
+
+export async function regenerateEmailDraft(placeId: string): Promise<EmailDraft> {
+  try {
+    return await apiFetch<EmailDraft>(`/api/practices/${placeId}/email/draft`, {
+      method: "POST",
+    })
+  } catch {
+    return { subject: "", body: "" }
+  }
+}
+
+export async function saveEmailDraft(
+  placeId: string,
+  draft: Partial<EmailDraft>,
+): Promise<EmailDraft> {
+  try {
+    return await apiFetch<EmailDraft>(`/api/practices/${placeId}/email/draft`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+  } catch {
+    return { subject: draft.subject ?? "", body: draft.body ?? "" }
+  }
+}
+
+export async function sendEmail(placeId: string): Promise<EmailMessage> {
+  return await apiFetch<EmailMessage>(`/api/practices/${placeId}/email/send`, {
+    method: "POST",
+  })
+}
+
+export async function getEmailMessages(placeId: string): Promise<EmailMessage[]> {
+  try {
+    const data = await apiFetch<{ messages: EmailMessage[] }>(
+      `/api/practices/${placeId}/email/messages`,
+    )
+    return data.messages
+  } catch {
+    return []
+  }
+}
+
+export async function pollEmailReplies(
+  placeId: string,
+): Promise<{ new_messages: EmailMessage[]; total: number }> {
+  return await apiFetch<{ new_messages: EmailMessage[]; total: number }>(
+    `/api/practices/${placeId}/email/poll`,
+    { method: "POST" },
+  )
+}
+
+export async function markEmailReplied(placeId: string): Promise<EmailMessage> {
+  return await apiFetch<EmailMessage>(
+    `/api/practices/${placeId}/email/mark-replied`,
+    { method: "POST" },
+  )
+}
+
+export async function updatePracticeEmail(
+  placeId: string,
+  email: string,
+): Promise<Practice> {
+  return await apiFetch<Practice>(`/api/practices/${placeId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  })
 }
