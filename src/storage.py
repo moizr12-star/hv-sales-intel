@@ -46,13 +46,31 @@ def upsert_practices(
     practices: list[Practice],
     touched_by: str | None = None,
 ) -> int:
-    """Upsert practices. Returns count. Stamps attribution when touched_by set."""
+    """Upsert practices. Returns count. Stamps attribution when touched_by set.
+
+    Only core Google Places fields + attribution are written. Analysis columns,
+    status, and notes are NEVER included — upserting with None would clobber
+    existing analysis when a search/rescan hits a previously-analyzed row.
+    """
     client = _get_client()
     if not client or not practices:
         return 0
+    # Derived/analysis/CRM columns are managed by their own write paths.
+    preserved = {
+        "summary",
+        "pain_points",
+        "sales_angles",
+        "recommended_service",
+        "lead_score",
+        "urgency_score",
+        "hiring_signal_score",
+        "status",
+        "notes",
+        "last_touched_by_name",  # derived from join
+    }
     rows = []
     for p in practices:
-        row = p.model_dump(exclude={"last_touched_by_name"})
+        row = p.model_dump(exclude=preserved)
         rows.append(_with_attribution(row, touched_by))
     result = client.table("practices").upsert(rows, on_conflict="place_id").execute()
     return len(result.data) if result.data else 0
