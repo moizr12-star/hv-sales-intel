@@ -95,6 +95,8 @@ Category: {category or 'Unknown'}
         "urgency_score": _clamp(result.get("urgency_score", 0)),
         "hiring_signal_score": _clamp(result.get("hiring_signal_score", 0)),
         "call_script": None,
+        "email_draft": None,
+        "email_draft_updated_at": None,
     }
 
 
@@ -202,4 +204,6 @@ def _mock_analysis(name: str, category: str | None) -> dict:
         "urgency_score": urgency,
         "hiring_signal_score": hiring,
         "call_script": None,
+        "email_draft": None,
+        "email_draft_updated_at": None,
     }
