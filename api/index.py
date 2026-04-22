@@ -179,8 +179,17 @@ class SearchRequest(BaseModel):
 async def search(body: SearchRequest, user: dict = Depends(get_current_user)):
     practices = await search_places(body.query)
     upserted = upsert_practices(practices, touched_by=user["id"])
+
+    # Re-fetch from DB so the response carries joined attribution
+    # (last_touched_by_name, last_touched_at). Falls back to the in-memory
+    # Practice objects if the DB isn't configured.
+    enriched: list[dict] = []
+    for p in practices:
+        row = get_practice(p.place_id)
+        enriched.append(row if row else p.model_dump())
+
     return {
-        "practices": [p.model_dump() for p in practices],
+        "practices": enriched,
         "count": len(practices),
         "upserted": upserted,
     }

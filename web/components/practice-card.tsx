@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
-import { Globe, Star, Brain, Loader2, FileText } from "lucide-react"
+import { Globe, Star, Brain, Loader2, FileText, ChevronDown, ChevronUp } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import { parseJsonArray } from "@/lib/types"
 import { cn, timeAgo } from "@/lib/utils"
@@ -57,13 +58,19 @@ export default function PracticeCard({
   onAnalyze,
   isAnalyzing,
 }: PracticeCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
   const isScored = practice.lead_score != null
   const painPoints = parseJsonArray(practice.pain_points ?? null)
   const salesAngles = parseJsonArray(practice.sales_angles ?? null)
 
+  function handleCardClick() {
+    onSelect(practice.place_id)
+    if (isScored) setIsExpanded((v) => !v)
+  }
+
   return (
     <div
-      onClick={() => onSelect(practice.place_id)}
+      onClick={handleCardClick}
       className={cn(
         "w-full text-left p-4 rounded-xl transition-all cursor-pointer",
         "hover:bg-ivory-200/60",
@@ -146,10 +153,23 @@ export default function PracticeCard({
         >
           <FileText className="w-3 h-3" /> Call Prep
         </Link>
+        {isScored && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded((v) => !v)
+            }}
+            className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition ml-auto"
+            title={isExpanded ? "Hide analysis" : "Show analysis"}
+          >
+            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {isExpanded ? "Hide" : "Details"}
+          </button>
+        )}
       </div>
 
-      {/* Inline analysis results */}
-      {isScored && (
+      {/* Inline analysis results — only when expanded */}
+      {isScored && isExpanded && (
         <div className="mt-3 pt-3 border-t border-gray-200/50 space-y-3">
           {practice.summary && (
             <p className="text-xs text-gray-600 leading-relaxed">{practice.summary}</p>
