@@ -39,6 +39,8 @@ async def analyze_practice(
     name: str,
     website: str | None,
     category: str | None,
+    city: str | None = None,
+    state: str | None = None,
 ) -> dict:
     """Analyze a practice. Uses OpenAI if API key is set, otherwise returns mock data."""
     if not settings.openai_api_key:
@@ -46,7 +48,13 @@ async def analyze_practice(
 
     # Collect data
     website_text = await crawl_website(website or "")
-    reviews = await fetch_reviews(place_id)
+    reviews = await fetch_reviews(
+        place_id,
+        name=name,
+        city=city,
+        state=state,
+        website=website,
+    )
     reviews_text = format_reviews_for_prompt(reviews)
 
     # Build user prompt
@@ -58,7 +66,7 @@ Category: {category or 'Unknown'}
 === WEBSITE CONTENT ===
 {website_text[:15000] if website_text else 'No website available.'}
 
-=== GOOGLE REVIEWS ===
+=== CUSTOMER REVIEWS (GOOGLE + EXTERNAL SOURCES) ===
 {reviews_text}
 """
 

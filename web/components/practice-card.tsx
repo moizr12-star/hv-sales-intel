@@ -1,12 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { Phone, Globe, Star, Brain, Loader2, FileText } from "lucide-react"
+import { Globe, Star, Brain, Loader2, FileText } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import ScoreBar from "./score-bar"
 import StatusBadge from "./status-badge"
+import CallButton from "./call-button"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -45,7 +46,7 @@ interface PracticeCardProps {
   practice: Practice
   isSelected: boolean
   onSelect: (placeId: string) => void
-  onAnalyze: (placeId: string) => void
+  onAnalyze: (placeId: string, refresh?: boolean) => void
   isAnalyzing: boolean
 }
 
@@ -101,13 +102,11 @@ export default function PracticeCard({
       {/* Action buttons */}
       <div className="flex gap-2 mt-3 flex-wrap">
         {practice.phone && (
-          <a
-            href={`tel:${practice.phone}`}
+          <CallButton
+            phone={practice.phone}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition"
-          >
-            <Phone className="w-3 h-3" /> Call
-          </a>
+          />
         )}
         {practice.website && (
           <a
@@ -123,7 +122,7 @@ export default function PracticeCard({
         <button
           onClick={(e) => {
             e.stopPropagation()
-            onAnalyze(practice.place_id)
+            onAnalyze(practice.place_id, isScored)
           }}
           disabled={isAnalyzing}
           className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 transition"

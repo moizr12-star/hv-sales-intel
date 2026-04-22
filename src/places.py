@@ -38,28 +38,32 @@ async def _google_search(query: str) -> list[Practice]:
         resp.raise_for_status()
 
     results = resp.json().get("places", [])
-    practices = []
-    for p in results:
-        loc = p.get("location", {})
-        hours_periods = p.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
-        practices.append(
-            Practice(
-                place_id=p["id"],
-                name=p.get("displayName", {}).get("text", "Unknown"),
-                address=p.get("formattedAddress"),
-                city=_extract_city(p.get("formattedAddress", "")),
-                state=_extract_state(p.get("formattedAddress", "")),
-                phone=p.get("nationalPhoneNumber"),
-                website=p.get("websiteUri"),
-                rating=p.get("rating"),
-                review_count=p.get("userRatingCount", 0),
-                category=_classify_types(p.get("types", [])),
-                lat=loc.get("latitude"),
-                lng=loc.get("longitude"),
-                opening_hours="; ".join(hours_periods) if hours_periods else None,
-            )
-        )
-    return practices
+    return [_map_google_place(p) for p in results]
+
+
+async def get_place(place_id: str, fallback: Practice | None = None) -> Practice | None:
+    """Fetch the latest place details for a known Google place id."""
+    if not settings.google_maps_api_key:
+        return fallback
+    if place_id.startswith(("mock_", "real_")):
+        return fallback
+
+    url = f"https://places.googleapis.com/v1/places/{place_id}"
+    headers = {
+        "X-Goog-Api-Key": settings.google_maps_api_key,
+        "X-Goog-FieldMask": FIELD_MASK,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+    except (httpx.HTTPError, Exception):
+        return fallback
+
+    payload = resp.json()
+    payload.setdefault("id", place_id)
+    return _map_google_place(payload)
 
 
 def _mock_search(query: str) -> list[Practice]:
@@ -74,6 +78,26 @@ def _mock_search(query: str) -> list[Practice]:
         if any(tok in searchable for tok in tokens):
             matches.append(Practice(**item))
     return matches if matches else [Practice(**item) for item in raw[:20]]
+
+
+def _map_google_place(place: dict) -> Practice:
+    loc = place.get("location", {})
+    hours_periods = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
+    return Practice(
+        place_id=place.get("id") or place.get("name", "").rsplit("/", 1)[-1] or "unknown_place",
+        name=place.get("displayName", {}).get("text", "Unknown"),
+        address=place.get("formattedAddress"),
+        city=_extract_city(place.get("formattedAddress", "")),
+        state=_extract_state(place.get("formattedAddress", "")),
+        phone=place.get("nationalPhoneNumber"),
+        website=place.get("websiteUri"),
+        rating=place.get("rating"),
+        review_count=place.get("userRatingCount", 0),
+        category=_classify_types(place.get("types", [])),
+        lat=loc.get("latitude"),
+        lng=loc.get("longitude"),
+        opening_hours="; ".join(hours_periods) if hours_periods else None,
+    )
 
 
 def _extract_city(address: str) -> str | None:

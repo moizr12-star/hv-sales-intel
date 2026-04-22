@@ -15,7 +15,9 @@ export default function Page() {
   const [practices, setPractices] = useState<Practice[]>(mockPractices)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isRescanning, setIsRescanning] = useState(false)
   const [cityLabel, setCityLabel] = useState("")
+  const [lastQuery, setLastQuery] = useState("")
   const [category, setCategory] = useState("")
   const [minRating, setMinRating] = useState(0)
   const [statusFilter, setStatusFilter] = useState("ACTIVE")
@@ -28,16 +30,33 @@ export default function Page() {
       const results = await searchPractices(query)
       setPractices(results)
       setCityLabel(query)
+      setLastQuery(query)
       setSelectedId(null)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  const handleAnalyze = useCallback(async (placeId: string) => {
+  const handleRescan = useCallback(async () => {
+    if (!lastQuery.trim()) return
+    setIsRescanning(true)
+    try {
+      const results = await searchPractices(lastQuery)
+      setPractices(results)
+      setCityLabel(lastQuery)
+      setSelectedId(null)
+    } finally {
+      setIsRescanning(false)
+    }
+  }, [lastQuery])
+
+  const handleAnalyze = useCallback(async (placeId: string, refresh = false) => {
     setAnalyzingIds((prev) => new Set(prev).add(placeId))
     try {
-      const updated = await analyzePractice(placeId)
+      const updated = await analyzePractice(placeId, {
+        force: refresh,
+        rescan: refresh,
+      })
       setPractices((prev) =>
         prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
       )
@@ -59,7 +78,10 @@ export default function Page() {
       const placeId = unscored[i].place_id
       setAnalyzingIds((prev) => new Set(prev).add(placeId))
       try {
-        const updated = await analyzePractice(placeId)
+        const updated = await analyzePractice(placeId, {
+          force: false,
+          rescan: false,
+        })
         setPractices((prev) =>
           prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
         )
@@ -96,6 +118,10 @@ export default function Page() {
         isLoading={isLoading}
         onScoreAll={handleScoreAll}
         scoreProgress={scoreProgress}
+        onRescan={handleRescan}
+        canRescan={!!lastQuery.trim()}
+        isRescanning={isRescanning}
+        currentQuery={lastQuery}
       />
 
       <main className="relative w-full h-full pt-14">

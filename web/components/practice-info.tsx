@@ -1,8 +1,9 @@
-import { Phone, Globe, Star } from "lucide-react"
+import { Globe, Star } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import ScoreBar from "./score-bar"
+import CallButton from "./call-button"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -49,12 +50,11 @@ export default function PracticeInfo({ practice }: { practice: Practice }) {
 
       <div className="flex gap-2">
         {practice.phone && (
-          <a
-            href={`tel:${practice.phone}`}
+          <CallButton
+            phone={practice.phone}
+            label={practice.phone}
             className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition"
-          >
-            <Phone className="w-3 h-3" /> {practice.phone}
-          </a>
+          />
         )}
         {practice.website && (
           <a

@@ -15,7 +15,7 @@ export async function searchPractices(query: string): Promise<Practice[]> {
     const data = await apiFetch<{ practices: Practice[] }>("/api/practices/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, refresh: true }),
     })
     return data.practices
   } catch {
@@ -48,16 +48,29 @@ export async function listPractices(params?: {
 
 export async function analyzePractice(
   placeId: string,
-  force?: boolean
+  options?: { force?: boolean; rescan?: boolean }
 ): Promise<Practice> {
   try {
     return await apiFetch<Practice>(`/api/practices/${placeId}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force: force ?? false }),
+      body: JSON.stringify({
+        force: options?.force ?? false,
+        rescan: options?.rescan ?? false,
+      }),
     })
   } catch {
     return mockAnalysis(placeId)
+  }
+}
+
+export async function rescanPractice(placeId: string): Promise<Practice> {
+  try {
+    return await apiFetch<Practice>(`/api/practices/${placeId}/rescan`, {
+      method: "POST",
+    })
+  } catch {
+    return mockPractices.find((p) => p.place_id === placeId) ?? mockPractices[0]
   }
 }
 

@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
-from src.places import search_places
+from src.models import Practice
+from src.places import get_place, search_places
 from src.scriptgen import generate_script
 from src.storage import (
     upsert_practices,
@@ -58,6 +59,7 @@ def list_practices(
 
 class SearchRequest(BaseModel):
     query: str
+    refresh: bool = False
 
 
 @app.post("/api/practices/search")
@@ -83,32 +85,45 @@ def get_single(place_id: str):
 
 class AnalyzeRequest(BaseModel):
     force: bool = False
+    rescan: bool = False
 
 
 @app.post("/api/practices/{place_id}/analyze")
 async def analyze(place_id: str, body: AnalyzeRequest | None = None):
     """Analyze a practice: crawl website, fetch reviews, run GPT-4o."""
     force = body.force if body else False
+    rescan = body.rescan if body else False
 
     existing = get_practice(place_id)
 
-    if existing and existing.get("lead_score") is not None and not force:
+    if existing and existing.get("lead_score") is not None and not force and not rescan:
         return existing
 
-    if existing:
-        name = existing["name"]
-        website = existing.get("website")
-        category = existing.get("category")
+    current_record = existing
+    if existing and rescan:
+        refreshed = await get_place(place_id, fallback=Practice(**existing))
+        if refreshed:
+            upsert_practices([refreshed])
+            current_record = get_practice(place_id) or refreshed.model_dump()
+
+    if current_record:
+        name = current_record["name"]
+        website = current_record.get("website")
+        category = current_record.get("category")
+        city = current_record.get("city")
+        state = current_record.get("state")
     else:
         name = place_id
         website = None
         category = None
+        city = None
+        state = None
 
-    analysis = await analyze_practice(place_id, name, website, category)
+    analysis = await analyze_practice(place_id, name, website, category, city=city, state=state)
 
     # Auto-advance status to RESEARCHED
-    if existing:
-        current_status = existing.get("status", "NEW")
+    if current_record:
+        current_status = current_record.get("status", "NEW")
         if _should_auto_advance(current_status, "RESEARCHED"):
             analysis["status"] = "RESEARCHED"
 
@@ -116,9 +131,24 @@ async def analyze(place_id: str, body: AnalyzeRequest | None = None):
     if updated:
         return updated
 
-    if existing:
-        return {**existing, **analysis}
+    if current_record:
+        return {**current_record, **analysis}
     return {"place_id": place_id, "name": name, **analysis}
+
+
+@app.post("/api/practices/{place_id}/rescan")
+async def rescan_practice(place_id: str):
+    """Refresh a stored practice from the source of truth before analysis."""
+    existing = get_practice(place_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Practice not found")
+
+    refreshed = await get_place(place_id, fallback=Practice(**existing))
+    if not refreshed:
+        return existing
+
+    upsert_practices([refreshed])
+    return get_practice(place_id) or refreshed.model_dump()
 
 
 @app.get("/api/practices/{place_id}/script")

@@ -1,6 +1,6 @@
 "use client"
 
-import { Brain } from "lucide-react"
+import { Brain, RefreshCw } from "lucide-react"
 import SearchBar from "./search-bar"
 
 interface TopBarProps {
@@ -8,9 +8,22 @@ interface TopBarProps {
   isLoading: boolean
   onScoreAll: () => void
   scoreProgress: string | null
+  onRescan: () => void
+  canRescan: boolean
+  isRescanning: boolean
+  currentQuery: string
 }
 
-export default function TopBar({ onSearch, isLoading, onScoreAll, scoreProgress }: TopBarProps) {
+export default function TopBar({
+  onSearch,
+  isLoading,
+  onScoreAll,
+  scoreProgress,
+  onRescan,
+  canRescan,
+  isRescanning,
+  currentQuery,
+}: TopBarProps) {
   return (
     <header className="fixed top-0 left-0 right-0 z-20 h-14 flex items-center justify-between px-6 bg-white/70 backdrop-blur-md border-b border-gray-200/50">
       <div className="flex items-center gap-2">
@@ -20,7 +33,15 @@ export default function TopBar({ onSearch, isLoading, onScoreAll, scoreProgress 
         <span className="text-xs text-gray-400 font-medium">Sales Intel</span>
       </div>
       <div className="flex items-center gap-3">
-        <SearchBar onSearch={onSearch} isLoading={isLoading} />
+        <SearchBar onSearch={onSearch} isLoading={isLoading} currentQuery={currentQuery} />
+        <button
+          onClick={onRescan}
+          disabled={!canRescan || isRescanning}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRescanning ? "animate-spin" : ""}`} />
+          {isRescanning ? "Rescanning..." : "Rescan"}
+        </button>
         <button
           onClick={onScoreAll}
           disabled={!!scoreProgress}

@@ -1,15 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Search } from "lucide-react"
 
 interface SearchBarProps {
   onSearch: (query: string) => void
   isLoading: boolean
+  currentQuery?: string
 }
 
-export default function SearchBar({ onSearch, isLoading }: SearchBarProps) {
-  const [value, setValue] = useState("")
+export default function SearchBar({ onSearch, isLoading, currentQuery = "" }: SearchBarProps) {
+  const [value, setValue] = useState(currentQuery)
+
+  useEffect(() => {
+    setValue(currentQuery)
+  }, [currentQuery])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
