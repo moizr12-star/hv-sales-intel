@@ -69,3 +69,27 @@ alter table practices add column if not exists last_touched_by uuid references p
 alter table practices add column if not exists last_touched_at timestamptz;
 
 create index if not exists idx_profiles_role on profiles (role);
+
+-- Email outreach
+
+alter table practices add column if not exists email text;
+alter table practices add column if not exists email_draft text;
+alter table practices add column if not exists email_draft_updated_at timestamptz;
+
+create table if not exists email_messages (
+  id bigserial primary key,
+  practice_id bigint not null references practices(id) on delete cascade,
+  user_id uuid references profiles(id),
+  direction text not null check (direction in ('out', 'in')),
+  subject text,
+  body text,
+  message_id text,
+  in_reply_to text,
+  sent_at timestamptz default now(),
+  error text
+);
+
+create index if not exists idx_email_messages_practice
+  on email_messages (practice_id, sent_at desc);
+create index if not exists idx_email_messages_message_id
+  on email_messages (message_id);
