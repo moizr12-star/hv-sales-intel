@@ -44,7 +44,7 @@ def upsert_practices(
         return 0
     rows = []
     for p in practices:
-        row = p.model_dump()
+        row = p.model_dump(exclude={"last_touched_by_name"})
         rows.append(_with_attribution(row, touched_by))
     result = client.table("practices").upsert(rows, on_conflict="place_id").execute()
     return len(result.data) if result.data else 0
