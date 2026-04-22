@@ -47,3 +47,11 @@ export function parseJsonArray(value: string | null): string[] {
     return []
   }
 }
+
+export interface User {
+  id: string
+  email: string
+  name: string | null
+  role: "admin" | "rep"
+  created_at?: string
+}

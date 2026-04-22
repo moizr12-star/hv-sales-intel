@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Fraunces, Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
+import { AuthProvider } from "@/lib/auth"
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -22,7 +23,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${fraunces.variable} ${jakarta.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   )
 }
