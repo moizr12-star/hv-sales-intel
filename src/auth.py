@@ -55,9 +55,19 @@ def _read_supabase_token(request: Request) -> str | None:
         # JSON blob base64-encoded. Older versions store the JSON directly.
         if raw.startswith("base64-"):
             import base64
+            payload = raw[len("base64-"):]
+            # Accept both URL-safe and standard base64; pad as needed.
+            padded = payload + "=" * (-len(payload) % 4)
             try:
-                raw = base64.b64decode(raw[len("base64-"):]).decode("utf-8")
+                decoded_bytes = base64.urlsafe_b64decode(padded)
             except Exception:
+                try:
+                    decoded_bytes = base64.b64decode(padded)
+                except Exception:
+                    continue
+            try:
+                raw = decoded_bytes.decode("utf-8")
+            except UnicodeDecodeError:
                 continue
         try:
             decoded = json.loads(raw)
