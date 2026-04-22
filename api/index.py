@@ -1,31 +1,32 @@
 import json
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
+from src.auth import get_current_user
 from src.models import Practice
 from src.places import get_place, search_places
 from src.scriptgen import generate_script
 from src.storage import (
-    upsert_practices,
-    query_practices,
     get_practice,
+    query_practices,
     update_practice_analysis,
     update_practice_fields,
+    upsert_practices,
 )
 
-app = FastAPI(title="HV Sales Intel", version="0.1.0")
+app = FastAPI(title="HV Sales Intel", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Status ordering for auto-transitions
 STATUS_ORDER = [
     "NEW", "RESEARCHED", "SCRIPT READY", "CONTACTED",
     "FOLLOW UP", "MEETING SET", "PROPOSAL", "CLOSED WON", "CLOSED LOST",
@@ -33,16 +34,26 @@ STATUS_ORDER = [
 
 
 def _should_auto_advance(current: str, target: str) -> bool:
-    """Return True if target is ahead of current in the pipeline."""
     try:
         return STATUS_ORDER.index(target) > STATUS_ORDER.index(current)
     except ValueError:
         return False
 
 
+def _strip_joined(row: dict) -> dict:
+    """Drop keys the Practice model doesn't know about (joins + attribution flat names)."""
+    allowed = set(Practice.model_fields.keys())
+    return {k: v for k, v in row.items() if k in allowed}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/me")
+def me(user: dict = Depends(get_current_user)):
+    return user
 
 
 @app.get("/api/practices")
@@ -51,8 +62,8 @@ def list_practices(
     category: str | None = Query(None),
     min_rating: float | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    user: dict = Depends(get_current_user),
 ):
-    """List practices from Supabase with optional filters."""
     rows = query_practices(city=city, category=category, min_rating=min_rating, limit=limit)
     return {"practices": rows, "count": len(rows)}
 
@@ -63,10 +74,9 @@ class SearchRequest(BaseModel):
 
 
 @app.post("/api/practices/search")
-async def search(body: SearchRequest):
-    """Search via Google Places (or mock). Upserts results into Supabase."""
+async def search(body: SearchRequest, user: dict = Depends(get_current_user)):
     practices = await search_places(body.query)
-    upserted = upsert_practices(practices)
+    upserted = upsert_practices(practices, touched_by=user["id"])
     return {
         "practices": [p.model_dump() for p in practices],
         "count": len(practices),
@@ -75,8 +85,7 @@ async def search(body: SearchRequest):
 
 
 @app.get("/api/practices/{place_id}")
-def get_single(place_id: str):
-    """Get a single practice by place_id."""
+def get_single(place_id: str, user: dict = Depends(get_current_user)):
     row = get_practice(place_id)
     if not row:
         raise HTTPException(status_code=404, detail="Practice not found")
@@ -89,21 +98,23 @@ class AnalyzeRequest(BaseModel):
 
 
 @app.post("/api/practices/{place_id}/analyze")
-async def analyze(place_id: str, body: AnalyzeRequest | None = None):
-    """Analyze a practice: crawl website, fetch reviews, run GPT-4o."""
+async def analyze(
+    place_id: str,
+    body: AnalyzeRequest | None = None,
+    user: dict = Depends(get_current_user),
+):
     force = body.force if body else False
     rescan = body.rescan if body else False
 
     existing = get_practice(place_id)
-
     if existing and existing.get("lead_score") is not None and not force and not rescan:
         return existing
 
     current_record = existing
     if existing and rescan:
-        refreshed = await get_place(place_id, fallback=Practice(**existing))
+        refreshed = await get_place(place_id, fallback=Practice(**_strip_joined(existing)))
         if refreshed:
-            upsert_practices([refreshed])
+            upsert_practices([refreshed], touched_by=user["id"])
             current_record = get_practice(place_id) or refreshed.model_dump()
 
     if current_record:
@@ -121,13 +132,12 @@ async def analyze(place_id: str, body: AnalyzeRequest | None = None):
 
     analysis = await analyze_practice(place_id, name, website, category, city=city, state=state)
 
-    # Auto-advance status to RESEARCHED
     if current_record:
         current_status = current_record.get("status", "NEW")
         if _should_auto_advance(current_status, "RESEARCHED"):
             analysis["status"] = "RESEARCHED"
 
-    updated = update_practice_analysis(place_id, analysis)
+    updated = update_practice_analysis(place_id, analysis, touched_by=user["id"])
     if updated:
         return updated
 
@@ -137,32 +147,28 @@ async def analyze(place_id: str, body: AnalyzeRequest | None = None):
 
 
 @app.post("/api/practices/{place_id}/rescan")
-async def rescan_practice(place_id: str):
-    """Refresh a stored practice from the source of truth before analysis."""
+async def rescan_practice(place_id: str, user: dict = Depends(get_current_user)):
     existing = get_practice(place_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Practice not found")
 
-    refreshed = await get_place(place_id, fallback=Practice(**existing))
+    refreshed = await get_place(place_id, fallback=Practice(**_strip_joined(existing)))
     if not refreshed:
         return existing
 
-    upsert_practices([refreshed])
+    upsert_practices([refreshed], touched_by=user["id"])
     return get_practice(place_id) or refreshed.model_dump()
 
 
 @app.get("/api/practices/{place_id}/script")
-async def get_script(place_id: str):
-    """Get or generate the call script for a practice."""
+async def get_script(place_id: str, user: dict = Depends(get_current_user)):
     practice = get_practice(place_id)
     if not practice:
         raise HTTPException(status_code=404, detail="Practice not found")
 
-    # Return cached script if it exists
     if practice.get("call_script"):
         return json.loads(practice["call_script"])
 
-    # Generate new script
     script = await generate_script(
         name=practice["name"],
         category=practice.get("category"),
@@ -171,20 +177,17 @@ async def get_script(place_id: str):
         sales_angles=practice.get("sales_angles"),
     )
 
-    # Store script
-    update_practice_fields(place_id, {"call_script": json.dumps(script)})
+    update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
 
-    # Auto-advance status to SCRIPT READY
     current_status = practice.get("status", "NEW")
     if _should_auto_advance(current_status, "SCRIPT READY"):
-        update_practice_fields(place_id, {"status": "SCRIPT READY"})
+        update_practice_fields(place_id, {"status": "SCRIPT READY"}, touched_by=user["id"])
 
     return script
 
 
 @app.post("/api/practices/{place_id}/script")
-async def regenerate_script_endpoint(place_id: str):
-    """Force regenerate the call script."""
+async def regenerate_script_endpoint(place_id: str, user: dict = Depends(get_current_user)):
     practice = get_practice(place_id)
     if not practice:
         raise HTTPException(status_code=404, detail="Practice not found")
@@ -197,8 +200,7 @@ async def regenerate_script_endpoint(place_id: str):
         sales_angles=practice.get("sales_angles"),
     )
 
-    update_practice_fields(place_id, {"call_script": json.dumps(script)})
-
+    update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
     return script
 
 
@@ -208,8 +210,11 @@ class PatchPracticeRequest(BaseModel):
 
 
 @app.patch("/api/practices/{place_id}")
-def patch_practice(place_id: str, body: PatchPracticeRequest):
-    """Update status and/or notes for a practice."""
+def patch_practice(
+    place_id: str,
+    body: PatchPracticeRequest,
+    user: dict = Depends(get_current_user),
+):
     fields: dict = {}
     if body.status is not None:
         if body.status not in STATUS_ORDER:
@@ -220,7 +225,7 @@ def patch_practice(place_id: str, body: PatchPracticeRequest):
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    updated = update_practice_fields(place_id, fields)
+    updated = update_practice_fields(place_id, fields, touched_by=user["id"])
     if not updated:
         raise HTTPException(status_code=404, detail="Practice not found")
     return updated
