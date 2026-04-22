@@ -28,3 +28,16 @@ def test_patch_practice_requires_auth():
 def test_me_requires_auth():
     resp = client.get("/api/me")
     assert resp.status_code == 401
+
+
+def test_admin_users_list_requires_auth():
+    resp = client.get("/api/admin/users")
+    assert resp.status_code == 401
+
+
+def test_admin_users_create_requires_auth():
+    resp = client.post(
+        "/api/admin/users",
+        json={"email": "x@y.com", "name": "X", "password": "p"},
+    )
+    assert resp.status_code == 401

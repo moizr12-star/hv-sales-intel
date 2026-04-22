@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
-from src.auth import get_current_user
+from src.auth import get_admin_client, get_current_user, require_admin
 from src.models import Practice
 from src.places import get_place, search_places
 from src.scriptgen import generate_script
@@ -38,6 +38,82 @@ def _should_auto_advance(current: str, target: str) -> bool:
         return STATUS_ORDER.index(target) > STATUS_ORDER.index(current)
     except ValueError:
         return False
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    name: str
+    password: str
+    role: str = "rep"
+
+
+@app.get("/api/admin/users")
+def list_users(admin: dict = Depends(require_admin)):
+    """List all profiles with per-user touched-practice count."""
+    client = get_admin_client()
+    profiles_res = client.table("profiles").select("*").execute()
+    counts_res = client.table("practices").select("last_touched_by").execute()
+    counts: dict[str, int] = {}
+    for row in counts_res.data or []:
+        uid = row.get("last_touched_by")
+        if uid:
+            counts[uid] = counts.get(uid, 0) + 1
+    users = []
+    for p in profiles_res.data or []:
+        users.append({**p, "practices_touched": counts.get(p["id"], 0)})
+    return {"users": users}
+
+
+@app.post("/api/admin/users")
+def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
+    if body.role not in ("admin", "rep"):
+        raise HTTPException(status_code=400, detail="role must be 'admin' or 'rep'")
+    client = get_admin_client()
+    try:
+        created = client.auth.admin.create_user({
+            "email": body.email,
+            "password": body.password,
+            "email_confirm": True,
+            "user_metadata": {"name": body.name},
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    user_id = created.user.id
+    if body.role == "admin":
+        client.table("profiles").update({"role": "admin"}).eq("id", user_id).execute()
+    profile = client.table("profiles").select("*").eq("id", user_id).single().execute()
+    return profile.data
+
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete self")
+    client = get_admin_client()
+    try:
+        client.auth.admin.delete_user(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+def reset_password(
+    user_id: str,
+    body: ResetPasswordRequest,
+    admin: dict = Depends(require_admin),
+):
+    client = get_admin_client()
+    try:
+        client.auth.admin.update_user_by_id(user_id, {"password": body.new_password})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
 
 
 def _strip_joined(row: dict) -> dict:
