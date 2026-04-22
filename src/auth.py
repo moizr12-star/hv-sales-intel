@@ -59,3 +59,32 @@ def _read_supabase_token(request: Request) -> str | None:
         if token:
             return token
     return None
+
+
+async def get_current_user(request: Request) -> dict:
+    """Resolve JWT → profiles row. 401 if missing/invalid, 403 if no profile."""
+    token = _read_supabase_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    client = get_admin_client()
+    try:
+        user_resp = client.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    auth_user = user_resp.user
+    result = (
+        client.table("profiles").select("*")
+        .eq("id", auth_user.id).single().execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=403, detail="No profile for this user")
+    return result.data
+
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Raise 403 if the current user isn't an admin."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
