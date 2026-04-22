@@ -9,10 +9,18 @@ PROFILE_JOIN_SELECT = "*, last_touched_by_profile:profiles!last_touched_by(name)
 
 
 def _get_client():
-    """Return Supabase client or None if unconfigured."""
-    if settings.supabase_url and settings.supabase_key:
-        return create_client(settings.supabase_url, settings.supabase_key)
-    return None
+    """Return Supabase client or None if unconfigured.
+
+    Uses the service-role key when available so backend writes bypass RLS.
+    The backend is the only client talking to the DB and performs its own
+    auth checks, so service-role is the correct scope here.
+    """
+    if not settings.supabase_url:
+        return None
+    key = settings.supabase_service_role_key or settings.supabase_key
+    if not key:
+        return None
+    return create_client(settings.supabase_url, key)
 
 
 def _with_attribution(fields: dict, touched_by: str | None) -> dict:
