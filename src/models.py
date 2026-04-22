@@ -28,3 +28,8 @@ class Practice(BaseModel):
     # Phase 3 (CRM)
     status: str = "NEW"
     notes: str | None = None
+
+    # Attribution
+    last_touched_by: str | None = None
+    last_touched_by_name: str | None = None
+    last_touched_at: str | None = None
