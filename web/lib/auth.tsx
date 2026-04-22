@@ -32,6 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (res.ok && !cancelled) {
           setUser(await res.json())
         }
+      } catch {
+        // Backend unreachable — leave user null; UI degrades gracefully.
       } finally {
         if (!cancelled) setLoading(false)
       }
