@@ -6,3 +6,5 @@ pydantic-settings>=2.2,<3
 python-dotenv>=1.0,<2
 openai>=1.30,<2
 beautifulsoup4>=4.12,<5
+pytest>=8.2,<9
+pytest-asyncio>=0.23,<1
