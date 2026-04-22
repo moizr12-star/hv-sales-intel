@@ -16,6 +16,9 @@ export const mockPractices: Practice[] = [
     lng: -95.4745,
     opening_hours: "Mon-Fri 8am-5pm, Sat 9am-2pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_dental_houston_002",
@@ -32,6 +35,9 @@ export const mockPractices: Practice[] = [
     lng: -95.4753,
     opening_hours: "Mon-Fri 9am-6pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_dental_houston_003",
@@ -48,6 +54,9 @@ export const mockPractices: Practice[] = [
     lng: -95.4009,
     opening_hours: "Mon-Fri 8am-5pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_dental_houston_004",
@@ -64,6 +73,9 @@ export const mockPractices: Practice[] = [
     lng: -95.5612,
     opening_hours: "Mon-Sat 9am-6pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_chiro_austin_001",
@@ -80,6 +92,9 @@ export const mockPractices: Practice[] = [
     lng: -97.7401,
     opening_hours: "Mon-Fri 8am-6pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_chiro_austin_002",
@@ -96,6 +111,9 @@ export const mockPractices: Practice[] = [
     lng: -97.7418,
     opening_hours: "Mon-Fri 9am-6pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_chiro_austin_003",
@@ -112,6 +130,9 @@ export const mockPractices: Practice[] = [
     lng: -97.7630,
     opening_hours: "Mon-Thu 8am-6pm, Fri 8am-12pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_urgent_dallas_001",
@@ -128,6 +149,9 @@ export const mockPractices: Practice[] = [
     lng: -96.7969,
     opening_hours: "Mon-Sun 8am-8pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_urgent_dallas_002",
@@ -144,6 +168,9 @@ export const mockPractices: Practice[] = [
     lng: -96.7834,
     opening_hours: "Mon-Sun 8am-9pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_urgent_dallas_003",
@@ -160,6 +187,9 @@ export const mockPractices: Practice[] = [
     lng: -96.8254,
     opening_hours: "Mon-Sun 9am-9pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_mental_miami_001",
@@ -176,6 +206,9 @@ export const mockPractices: Practice[] = [
     lng: -80.1996,
     opening_hours: "Mon-Fri 9am-6pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_mental_miami_002",
@@ -192,6 +225,9 @@ export const mockPractices: Practice[] = [
     lng: -80.1893,
     opening_hours: "Mon-Fri 8am-7pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_primary_columbus_001",
@@ -208,6 +244,9 @@ export const mockPractices: Practice[] = [
     lng: -82.8185,
     opening_hours: "Mon-Fri 8am-5pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
   {
     place_id: "real_primary_columbus_002",
@@ -224,5 +263,8 @@ export const mockPractices: Practice[] = [
     lng: -83.0221,
     opening_hours: "Mon-Fri 7:30am-5pm",
     status: "NEW",
+    last_touched_by: null,
+    last_touched_by_name: null,
+    last_touched_at: null,
   },
 ]

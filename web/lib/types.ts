@@ -25,6 +25,11 @@ export interface Practice {
   // Phase 3 (Call Playbook)
   call_script?: string | null // JSON string of Script
   notes?: string | null
+
+  // Attribution (last-touched)
+  last_touched_by: string | null
+  last_touched_by_name: string | null
+  last_touched_at: string | null
 }
 
 export interface ScriptSection {
