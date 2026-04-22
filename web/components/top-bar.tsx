@@ -2,6 +2,7 @@
 
 import { Brain, RefreshCw } from "lucide-react"
 import SearchBar from "./search-bar"
+import UserMenu from "./user-menu"
 
 interface TopBarProps {
   onSearch: (query: string) => void
@@ -50,6 +51,7 @@ export default function TopBar({
           <Brain className="w-4 h-4" />
           {scoreProgress ?? "Score All"}
         </button>
+        <UserMenu />
       </div>
     </header>
   )
