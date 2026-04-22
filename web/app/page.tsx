@@ -1,18 +1,37 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import dynamic from "next/dynamic"
 import type { Practice } from "@/lib/types"
 import { mockPractices } from "@/lib/mock-data"
 import TopBar from "@/components/top-bar"
 import PracticeCard from "@/components/practice-card"
 import FilterBar from "@/components/filter-bar"
-import { searchPractices, analyzePractice } from "@/lib/api"
+import { searchPractices, analyzePractice, listPractices } from "@/lib/api"
 
 const MapView = dynamic(() => import("@/components/map-view"), { ssr: false })
 
 export default function Page() {
   const [practices, setPractices] = useState<Practice[]>(mockPractices)
+
+  // Hydrate from DB on mount so analysis + attribution persist across refreshes.
+  useEffect(() => {
+    let cancelled = false
+    async function hydrate() {
+      try {
+        const dbRows = await listPractices({})
+        if (!cancelled && dbRows.length > 0) {
+          setPractices(dbRows)
+        }
+      } catch {
+        // Keep mock fallback
+      }
+    }
+    hydrate()
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
