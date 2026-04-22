@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,11 +7,18 @@ from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
 from src.auth import get_admin_client, get_current_user, require_admin
+from src.email_gen import generate_email_draft
+from src.email_poll import poll_replies
+from src.email_send import send_email
 from src.models import Practice
 from src.places import get_place, search_places
 from src.scriptgen import generate_script
+from src.settings import settings as app_settings
 from src.storage import (
     get_practice,
+    insert_email_message,
+    list_email_messages,
+    list_outbound_message_ids,
     query_practices,
     update_practice_analysis,
     update_practice_fields,
@@ -140,6 +148,273 @@ def reset_password(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
+
+
+# ======================= Email outreach endpoints =======================
+
+def _email_configured() -> bool:
+    return bool(
+        app_settings.ms_tenant_id
+        and app_settings.ms_client_id
+        and app_settings.ms_client_secret
+        and app_settings.ms_refresh_token
+        and app_settings.ms_sender_email
+    )
+
+
+class EmailDraftPatch(BaseModel):
+    subject: str | None = None
+    body: str | None = None
+
+
+def _parse_draft(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+@app.get("/api/practices/{place_id}/email/draft")
+async def get_email_draft_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    cached = _parse_draft(practice.get("email_draft"))
+    if cached:
+        return cached
+
+    draft = await generate_email_draft(
+        name=practice["name"],
+        category=practice.get("category"),
+        summary=practice.get("summary"),
+        pain_points=practice.get("pain_points"),
+        sales_angles=practice.get("sales_angles"),
+    )
+    update_practice_fields(
+        place_id,
+        {
+            "email_draft": json.dumps(draft),
+            "email_draft_updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        touched_by=user["id"],
+    )
+    return draft
+
+
+@app.post("/api/practices/{place_id}/email/draft")
+async def regenerate_email_draft_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    draft = await generate_email_draft(
+        name=practice["name"],
+        category=practice.get("category"),
+        summary=practice.get("summary"),
+        pain_points=practice.get("pain_points"),
+        sales_angles=practice.get("sales_angles"),
+    )
+    update_practice_fields(
+        place_id,
+        {
+            "email_draft": json.dumps(draft),
+            "email_draft_updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        touched_by=user["id"],
+    )
+    return draft
+
+
+@app.patch("/api/practices/{place_id}/email/draft")
+def patch_email_draft_endpoint(
+    place_id: str,
+    body: EmailDraftPatch,
+    user: dict = Depends(get_current_user),
+):
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    current = _parse_draft(practice.get("email_draft")) or {"subject": "", "body": ""}
+    if body.subject is not None:
+        current["subject"] = body.subject
+    if body.body is not None:
+        current["body"] = body.body
+
+    update_practice_fields(
+        place_id,
+        {
+            "email_draft": json.dumps(current),
+            "email_draft_updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        touched_by=user["id"],
+    )
+    return current
+
+
+@app.post("/api/practices/{place_id}/email/send")
+async def send_email_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _email_configured():
+        raise HTTPException(503, "Email not configured")
+
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    email_to = practice.get("email")
+    if not email_to:
+        raise HTTPException(400, "Email address required")
+
+    draft = _parse_draft(practice.get("email_draft"))
+    if not draft or not draft.get("subject") or not draft.get("body"):
+        raise HTTPException(400, "No draft to send")
+
+    try:
+        result = await send_email(email_to, draft["subject"], draft["body"])
+    except Exception as e:
+        insert_email_message(
+            practice_id=practice["id"],
+            user_id=user["id"],
+            direction="out",
+            subject=draft["subject"],
+            body=draft["body"],
+            message_id=None,
+            in_reply_to=None,
+            error=str(e),
+        )
+        raise HTTPException(500, f"Send failed: {e}") from e
+
+    row = insert_email_message(
+        practice_id=practice["id"],
+        user_id=user["id"],
+        direction="out",
+        subject=draft["subject"],
+        body=draft["body"],
+        message_id=result.get("message_id"),
+        in_reply_to=None,
+        error=None,
+    )
+
+    current_status = practice.get("status", "NEW")
+    fields: dict = {}
+    if _should_auto_advance(current_status, "CONTACTED"):
+        fields["status"] = "CONTACTED"
+    update_practice_fields(place_id, fields, touched_by=user["id"])
+
+    return row
+
+
+@app.get("/api/practices/{place_id}/email/messages")
+def list_email_messages_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+    return {"messages": list_email_messages(practice["id"])}
+
+
+@app.post("/api/practices/{place_id}/email/poll")
+async def poll_email_replies_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not _email_configured():
+        raise HTTPException(503, "Email not configured")
+
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    email_addr = practice.get("email")
+    if not email_addr:
+        raise HTTPException(400, "Practice has no email address")
+
+    outbound = list_outbound_message_ids(practice["id"])
+    since = (
+        datetime.now(timezone.utc)
+        - timedelta(days=app_settings.email_reply_lookback_days)
+    ).isoformat()
+
+    replies = await poll_replies(
+        practice_email=email_addr,
+        outbound_message_ids=outbound,
+        since_iso=since,
+    )
+
+    existing = list_email_messages(practice["id"])
+    existing_ids = {m.get("message_id") for m in existing if m.get("message_id")}
+
+    new_rows: list[dict] = []
+    for reply in replies:
+        if reply["message_id"] in existing_ids:
+            continue
+        inserted = insert_email_message(
+            practice_id=practice["id"],
+            user_id=None,
+            direction="in",
+            subject=reply.get("subject"),
+            body=reply.get("body"),
+            message_id=reply.get("message_id"),
+            in_reply_to=reply.get("in_reply_to"),
+            error=None,
+        )
+        if inserted:
+            new_rows.append(inserted)
+
+    if new_rows:
+        current_status = practice.get("status", "NEW")
+        fields: dict = {}
+        if _should_auto_advance(current_status, "FOLLOW UP"):
+            fields["status"] = "FOLLOW UP"
+        update_practice_fields(place_id, fields, touched_by=user["id"])
+
+    return {
+        "new_messages": new_rows,
+        "total": len(list_email_messages(practice["id"])),
+    }
+
+
+@app.post("/api/practices/{place_id}/email/mark-replied")
+def mark_email_replied_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    practice = get_practice(place_id)
+    if not practice:
+        raise HTTPException(404, "Practice not found")
+
+    row = insert_email_message(
+        practice_id=practice["id"],
+        user_id=None,
+        direction="in",
+        subject=None,
+        body=f"[manually marked as replied by {user.get('name') or user['email']}]",
+        message_id=None,
+        in_reply_to=None,
+        error=None,
+    )
+
+    current_status = practice.get("status", "NEW")
+    fields: dict = {}
+    if _should_auto_advance(current_status, "FOLLOW UP"):
+        fields["status"] = "FOLLOW UP"
+    update_practice_fields(place_id, fields, touched_by=user["id"])
+
+    return row
 
 
 def _strip_joined(row: dict) -> dict:
@@ -318,6 +593,7 @@ async def regenerate_script_endpoint(place_id: str, user: dict = Depends(get_cur
 class PatchPracticeRequest(BaseModel):
     status: str | None = None
     notes: str | None = None
+    email: str | None = None
 
 
 @app.patch("/api/practices/{place_id}")
@@ -333,6 +609,8 @@ def patch_practice(
         fields["status"] = body.status
     if body.notes is not None:
         fields["notes"] = body.notes
+    if body.email is not None:
+        fields["email"] = body.email
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
