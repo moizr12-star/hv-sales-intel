@@ -1,5 +1,6 @@
 import { Globe, Star } from "lucide-react"
 import type { Practice } from "@/lib/types"
+import type { CallLogResponse } from "@/lib/api"
 import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import ScoreBar from "./score-bar"
@@ -24,7 +25,13 @@ function StarRating({ rating }: { rating: number | null }) {
   )
 }
 
-export default function PracticeInfo({ practice }: { practice: Practice }) {
+export default function PracticeInfo({
+  practice,
+  onCallLogged,
+}: {
+  practice: Practice
+  onCallLogged?: (response: CallLogResponse) => void
+}) {
   const painPoints = parseJsonArray(practice.pain_points ?? null)
   const salesAngles = parseJsonArray(practice.sales_angles ?? null)
 
@@ -51,8 +58,9 @@ export default function PracticeInfo({ practice }: { practice: Practice }) {
       <div className="flex gap-2">
         {practice.phone && (
           <CallButton
-            phone={practice.phone}
+            practice={practice}
             label={practice.phone}
+            onLogged={onCallLogged}
             className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition"
           />
         )}

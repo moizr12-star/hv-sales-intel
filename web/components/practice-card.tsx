@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Globe, Star, Brain, Loader2, FileText, ChevronDown, ChevronUp } from "lucide-react"
 import type { Practice } from "@/lib/types"
+import type { CallLogResponse } from "@/lib/api"
 import { parseJsonArray } from "@/lib/types"
 import { cn, timeAgo } from "@/lib/utils"
 import ScoreBar from "./score-bar"
@@ -49,6 +50,7 @@ interface PracticeCardProps {
   onSelect: (placeId: string) => void
   onAnalyze: (placeId: string, refresh?: boolean) => void
   isAnalyzing: boolean
+  onCallLogged?: (response: CallLogResponse) => void
 }
 
 export default function PracticeCard({
@@ -57,6 +59,7 @@ export default function PracticeCard({
   onSelect,
   onAnalyze,
   isAnalyzing,
+  onCallLogged,
 }: PracticeCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const isScored = practice.lead_score != null
@@ -96,6 +99,17 @@ export default function PracticeCard({
           Last touched by {practice.last_touched_by_name} · {timeAgo(practice.last_touched_at)}
         </p>
       )}
+      {practice.call_count > 0 && (
+        <p className="text-[11px] text-gray-500 mt-0.5">
+          📞 {practice.call_count} {practice.call_count === 1 ? "call" : "calls"}
+          {practice.salesforce_synced_at && (
+            <> · last synced {timeAgo(practice.salesforce_synced_at)}</>
+          )}
+          {practice.salesforce_owner_name && (
+            <> · owner: {practice.salesforce_owner_name} (SF)</>
+          )}
+        </p>
+      )}
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
 
       <div className="flex items-center gap-3 mt-2">
@@ -115,8 +129,9 @@ export default function PracticeCard({
       <div className="flex gap-2 mt-3 flex-wrap">
         {practice.phone && (
           <CallButton
-            phone={practice.phone}
+            practice={practice}
             onClick={(e) => e.stopPropagation()}
+            onLogged={(response) => onCallLogged?.(response)}
             className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition"
           />
         )}

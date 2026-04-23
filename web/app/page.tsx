@@ -176,6 +176,18 @@ export default function Page() {
                   onSelect={setSelectedId}
                   onAnalyze={handleAnalyze}
                   isAnalyzing={analyzingIds.has(p.place_id)}
+                  onCallLogged={(response) => {
+                    setPractices((prev) =>
+                      prev.map((x) =>
+                        x.place_id === response.practice.place_id
+                          ? { ...x, ...response.practice }
+                          : x
+                      )
+                    )
+                    if (response.sf_warning) {
+                      console.warn("[SF]", response.sf_warning)
+                    }
+                  }}
                 />
               ))
             )}

@@ -1,37 +1,49 @@
 "use client"
 
+import { useState } from "react"
 import { Phone } from "lucide-react"
-import { buildRingCentralCallUrls, openRingCentralCall } from "@/lib/ringcentral"
+import type { Practice } from "@/lib/types"
+import type { CallLogResponse } from "@/lib/api"
+import CallLogModal from "./call-log-modal"
 
 interface CallButtonProps {
-  phone: string
+  practice: Practice
   label?: string
   className: string
-  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onLogged?: (response: CallLogResponse) => void
 }
 
 export default function CallButton({
-  phone,
+  practice,
   label = "Call",
   className,
   onClick,
+  onLogged,
 }: CallButtonProps) {
-  const urls = buildRingCentralCallUrls(phone)
+  const [open, setOpen] = useState(false)
+
+  if (!practice.phone) return null
 
   return (
-    <a
-      href={urls.webUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(event) => {
-        onClick?.(event)
-        event.preventDefault()
-        openRingCentralCall(phone)
-      }}
-      className={className}
-      title={`Call via RingCentral: ${phone}`}
-    >
-      <Phone className="w-3 h-3" /> {label}
-    </a>
+    <>
+      <button
+        type="button"
+        onClick={(event) => {
+          onClick?.(event)
+          setOpen(true)
+        }}
+        className={className}
+        title={`Log call + dial via RingCentral: ${practice.phone}`}
+      >
+        <Phone className="w-3 h-3" /> {label}
+      </button>
+      <CallLogModal
+        practice={practice}
+        open={open}
+        onClose={() => setOpen(false)}
+        onLogged={(response) => onLogged?.(response)}
+      />
+    </>
   )
 }
