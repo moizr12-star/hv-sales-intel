@@ -235,3 +235,22 @@ export async function updatePracticeEmail(
     body: JSON.stringify({ email }),
   })
 }
+
+export interface CallLogResponse {
+  practice: Practice
+  sf_warning: string | null
+}
+
+export async function logCall(
+  placeId: string,
+  note: string,
+): Promise<CallLogResponse> {
+  return await apiFetch<CallLogResponse>(
+    `/api/practices/${placeId}/call/log`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    },
+  )
+}
