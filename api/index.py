@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from src.analyzer import analyze_practice
 from src.auth import get_admin_client, get_current_user, require_admin
+from src.call_log import append_call_note
 from src.email_gen import generate_email_draft
 from src.email_poll import poll_replies
 from src.email_send import send_email
@@ -618,3 +619,23 @@ def patch_practice(
     if not updated:
         raise HTTPException(status_code=404, detail="Practice not found")
     return updated
+
+
+# ======================= Call log + Salesforce sync =======================
+
+
+class CallLogRequest(BaseModel):
+    note: str = ""
+
+
+@app.post("/api/practices/{place_id}/call/log")
+async def call_log_endpoint(
+    place_id: str,
+    body: CallLogRequest,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        practice, warning = await append_call_note(place_id, body.note, user)
+    except LookupError:
+        raise HTTPException(404, "Practice not found")
+    return {"practice": practice, "sf_warning": warning}
