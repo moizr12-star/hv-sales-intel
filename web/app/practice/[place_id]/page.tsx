@@ -12,6 +12,7 @@ import ScriptView from "@/components/script-view"
 import NotesPanel from "@/components/notes-panel"
 import ActionsPanel from "@/components/actions-panel"
 import EmailPanel from "@/components/email-panel"
+import CallLogTab from "@/components/call-log-tab"
 import StatusBadge, { ALL_STATUSES } from "@/components/status-badge"
 
 export default function CallPrepPage() {
@@ -151,7 +152,7 @@ export default function CallPrepPage() {
             tabs={[
               { id: "notes", label: "Notes" },
               { id: "email", label: "Email" },
-              { id: "activity", label: "Activity", disabled: true },
+              { id: "calllog", label: "Call log" },
             ]}
             renderTab={(id) => {
               if (id === "notes") {
@@ -172,11 +173,22 @@ export default function CallPrepPage() {
                   />
                 )
               }
-              return (
-                <p className="text-xs text-gray-400">
-                  Activity history — coming soon.
-                </p>
-              )
+              if (id === "calllog") {
+                return (
+                  <CallLogTab
+                    practice={practice}
+                    onLogged={(response) => {
+                      setPractice((prev) =>
+                        prev ? { ...prev, ...response.practice } : prev,
+                      )
+                      if (response.sf_warning) {
+                        console.warn("[SF]", response.sf_warning)
+                      }
+                    }}
+                  />
+                )
+              }
+              return null
             }}
           />
         </aside>
