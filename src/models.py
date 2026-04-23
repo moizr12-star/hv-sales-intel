@@ -38,3 +38,11 @@ class Practice(BaseModel):
     last_touched_by: str | None = None
     last_touched_by_name: str | None = None
     last_touched_at: str | None = None
+
+    # Salesforce integration + call log
+    salesforce_lead_id: str | None = None
+    salesforce_owner_id: str | None = None
+    salesforce_owner_name: str | None = None
+    salesforce_synced_at: str | None = None
+    call_count: int = 0
+    call_notes: str | None = None

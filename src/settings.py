@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     ms_sender_email: str = ""
     email_reply_lookback_days: int = 30
 
+    # Salesforce integration (username-password OAuth)
+    sf_client_id: str = ""
+    sf_client_secret: str = ""
+    sf_username: str = ""
+    sf_password: str = ""
+    sf_security_token: str = ""
+    sf_login_url: str = "https://login.salesforce.com"
+    sf_api_version: str = "v60.0"
+
     class Config:
         env_file = ".env"
         extra = "ignore"
