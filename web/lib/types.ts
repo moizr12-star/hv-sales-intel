@@ -35,6 +35,14 @@ export interface Practice {
   last_touched_by: string | null
   last_touched_by_name: string | null
   last_touched_at: string | null
+
+  // Salesforce integration + call log
+  salesforce_lead_id: string | null
+  salesforce_owner_id: string | null
+  salesforce_owner_name: string | null
+  salesforce_synced_at: string | null
+  call_count: number
+  call_notes: string | null
 }
 
 export interface EmailMessage {
