@@ -93,3 +93,15 @@ create index if not exists idx_email_messages_practice
   on email_messages (practice_id, sent_at desc);
 create index if not exists idx_email_messages_message_id
   on email_messages (message_id);
+
+-- ======================= Salesforce integration + call log =======================
+
+alter table practices
+  add column if not exists salesforce_lead_id     text,
+  add column if not exists salesforce_owner_id    text,
+  add column if not exists salesforce_owner_name  text,
+  add column if not exists salesforce_synced_at   timestamptz,
+  add column if not exists call_count             integer not null default 0,
+  add column if not exists call_notes             text;
+
+create index if not exists idx_practices_sf_lead_id on practices(salesforce_lead_id);
