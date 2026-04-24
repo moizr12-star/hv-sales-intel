@@ -44,7 +44,7 @@ async def test_trigger_enrichment_omits_auth_header_when_no_api_key():
 
     assert result == {"status": "pending"}
     headers = fake_post.call_args.kwargs["headers"]
-    assert "Authorization" not in headers
+    assert "x-clay-webhook-auth" not in headers
     assert headers["Content-Type"] == "application/json"
 
 
@@ -66,7 +66,7 @@ async def test_trigger_enrichment_posts_correct_payload():
     assert url_called == "https://clay.example/v1/rows"
 
     headers = fake_post.call_args.kwargs["headers"]
-    assert headers["Authorization"] == "Bearer ck_test"
+    assert headers["x-clay-webhook-auth"] == "ck_test"
     assert headers["Content-Type"] == "application/json"
 
     body = fake_post.call_args.kwargs["json"]

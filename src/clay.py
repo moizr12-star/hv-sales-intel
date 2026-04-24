@@ -5,9 +5,8 @@ from src.settings import settings
 
 
 def _is_configured() -> bool:
-    """Only the webhook URL is required; Clay's v3 webhook sources are
-    unauthenticated (the URL id is the secret). API key is optional and
-    only added as a Bearer header when present."""
+    """Webhook URL is required. Auth token (sent as x-clay-webhook-auth)
+    is optional — some Clay sources don't require one."""
     return bool(settings.clay_table_webhook_url)
 
 
@@ -31,7 +30,7 @@ async def trigger_enrichment(practice: Practice) -> dict:
     }
     headers = {"Content-Type": "application/json"}
     if settings.clay_table_api_key:
-        headers["Authorization"] = f"Bearer {settings.clay_table_api_key}"
+        headers["x-clay-webhook-auth"] = settings.clay_table_api_key
 
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
