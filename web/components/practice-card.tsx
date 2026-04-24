@@ -10,6 +10,9 @@ import { cn, timeAgo } from "@/lib/utils"
 import ScoreBar from "./score-bar"
 import StatusBadge from "./status-badge"
 import CallButton from "./call-button"
+import EnrichButton from "./enrich-button"
+import OwnerMiniCard from "./owner-mini-card"
+import { useEnrichmentPoll } from "@/lib/use-enrichment-poll"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -51,6 +54,7 @@ interface PracticeCardProps {
   onAnalyze: (placeId: string, refresh?: boolean) => void
   isAnalyzing: boolean
   onCallLogged?: (response: CallLogResponse) => void
+  onEnrichmentUpdate?: (next: Practice) => void
 }
 
 export default function PracticeCard({
@@ -60,8 +64,11 @@ export default function PracticeCard({
   onAnalyze,
   isAnalyzing,
   onCallLogged,
+  onEnrichmentUpdate,
 }: PracticeCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+
+  useEnrichmentPoll(practice, (next) => onEnrichmentUpdate?.(next))
   const isScored = practice.lead_score != null
   const painPoints = parseJsonArray(practice.pain_points ?? null)
   const salesAngles = parseJsonArray(practice.sales_angles ?? null)
@@ -108,6 +115,12 @@ export default function PracticeCard({
           {practice.salesforce_owner_name && (
             <> · owner: {practice.salesforce_owner_name} (SF)</>
           )}
+        </p>
+      )}
+      <OwnerMiniCard practice={practice} compact />
+      {practice.enrichment_status === "failed" && !practice.owner_name && (
+        <p className="text-[11px] text-rose-600 mt-1">
+          No owner found — try Re-enrich
         </p>
       )}
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
@@ -161,6 +174,12 @@ export default function PracticeCard({
           )}
           {isAnalyzing ? "Analyzing..." : isScored ? "Re-analyze" : "Analyze"}
         </button>
+        <EnrichButton
+          practice={practice}
+          onClick={(e) => e.stopPropagation()}
+          onEnriched={(response) => onEnrichmentUpdate?.(response.practice)}
+          className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-amber-500 text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition"
+        />
         <Link
           href={`/practice/${practice.place_id}`}
           onClick={(e) => e.stopPropagation()}

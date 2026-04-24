@@ -188,6 +188,13 @@ export default function Page() {
                       console.warn("[SF]", response.sf_warning)
                     }
                   }}
+                  onEnrichmentUpdate={(next) => {
+                    setPractices((prev) =>
+                      prev.map((x) =>
+                        x.place_id === next.place_id ? { ...x, ...next } : x,
+                      ),
+                    )
+                  }}
                 />
               ))
             )}
