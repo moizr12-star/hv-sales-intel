@@ -21,18 +21,31 @@ def _practice(**overrides) -> Practice:
 
 
 @pytest.mark.asyncio
-async def test_trigger_enrichment_skips_when_not_configured():
+async def test_trigger_enrichment_skips_when_webhook_url_missing():
     with patch("src.clay.settings") as s:
         s.clay_table_webhook_url = ""
         s.clay_table_api_key = "anything"
         result = await clay.trigger_enrichment(_practice())
     assert result == {"skipped": True, "reason": "clay_not_configured"}
 
+
+@pytest.mark.asyncio
+async def test_trigger_enrichment_omits_auth_header_when_no_api_key():
+    fake_post = AsyncMock()
+    fake_post.return_value.status_code = 200
+    fake_post.return_value.raise_for_status = lambda: None
+
     with patch("src.clay.settings") as s:
-        s.clay_table_webhook_url = "https://clay.example"
+        s.clay_table_webhook_url = "https://api.clay.com/v3/sources/webhook/abc"
         s.clay_table_api_key = ""
-        result = await clay.trigger_enrichment(_practice())
-    assert result == {"skipped": True, "reason": "clay_not_configured"}
+        with patch("src.clay.httpx.AsyncClient") as client_cls:
+            client_cls.return_value.__aenter__.return_value.post = fake_post
+            result = await clay.trigger_enrichment(_practice())
+
+    assert result == {"status": "pending"}
+    headers = fake_post.call_args.kwargs["headers"]
+    assert "Authorization" not in headers
+    assert headers["Content-Type"] == "application/json"
 
 
 @pytest.mark.asyncio
