@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -669,3 +669,38 @@ async def enrich_endpoint(
 
     updated = update_practice_fields(place_id, {"enrichment_status": "pending"}, touched_by=None)
     return {"practice": updated, "clay_warning": None}
+
+
+class ClayWebhookPayload(BaseModel):
+    place_id: str
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
+    owner_title: str | None = None
+    owner_linkedin: str | None = None
+
+
+@app.post("/api/webhooks/clay")
+def clay_webhook(
+    body: ClayWebhookPayload,
+    x_clay_secret: str | None = Header(default=None, alias="X-Clay-Secret"),
+):
+    if not app_settings.clay_inbound_secret or x_clay_secret != app_settings.clay_inbound_secret:
+        raise HTTPException(401, "Invalid secret")
+
+    existing = get_practice(body.place_id)
+    if not existing:
+        raise HTTPException(404, "Practice not found")
+
+    fields: dict = {}
+    for key in ("owner_name", "owner_email", "owner_phone", "owner_title", "owner_linkedin"):
+        value = getattr(body, key)
+        if value is not None and value != "":
+            fields[key] = value
+
+    has_any_contact = any(k in fields for k in ("owner_name", "owner_email", "owner_phone"))
+    fields["enrichment_status"] = "enriched" if has_any_contact else "failed"
+    fields["enriched_at"] = datetime.now(timezone.utc).isoformat()
+
+    update_practice_fields(body.place_id, fields, touched_by=None)
+    return {"ok": True}
