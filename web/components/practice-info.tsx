@@ -5,6 +5,7 @@ import { parseJsonArray } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import ScoreBar from "./score-bar"
 import CallButton from "./call-button"
+import OwnerMiniCard from "./owner-mini-card"
 
 function StarRating({ rating }: { rating: number | null }) {
   if (!rating) return null
@@ -73,6 +74,23 @@ export default function PracticeInfo({
           >
             <Globe className="w-3 h-3" /> Website
           </a>
+        )}
+      </div>
+
+      <div>
+        <h4 className="text-xs font-semibold text-gray-700 mb-1">Owner</h4>
+        {practice.enrichment_status === "pending" ? (
+          <p className="text-xs text-gray-400">Enriching owner info…</p>
+        ) : practice.owner_name ||
+          practice.owner_email ||
+          practice.owner_phone ? (
+          <OwnerMiniCard practice={practice} />
+        ) : (
+          <p className="text-xs text-gray-400">
+            {practice.enrichment_status === "failed"
+              ? "No owner found."
+              : "No owner info yet — enrich from the map."}
+          </p>
         )}
       </div>
 
