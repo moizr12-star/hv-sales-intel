@@ -254,3 +254,21 @@ export async function logCall(
     },
   )
 }
+
+export async function getPractice(placeId: string): Promise<Practice> {
+  return await apiFetch<Practice>(`/api/practices/${placeId}`)
+}
+
+export interface EnrichResponse {
+  practice: Practice
+  clay_warning: string | null
+}
+
+export async function enrichPractice(
+  placeId: string,
+): Promise<EnrichResponse> {
+  return await apiFetch<EnrichResponse>(
+    `/api/practices/${placeId}/enrich`,
+    { method: "POST" },
+  )
+}
