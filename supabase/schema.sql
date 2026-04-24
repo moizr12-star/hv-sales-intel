@@ -105,3 +105,14 @@ alter table practices
   add column if not exists call_notes             text;
 
 create index if not exists idx_practices_sf_lead_id on practices(salesforce_lead_id);
+
+-- ======================= Clay owner enrichment =======================
+
+alter table practices
+  add column if not exists owner_name         text,
+  add column if not exists owner_email        text,
+  add column if not exists owner_phone        text,
+  add column if not exists owner_title        text,
+  add column if not exists owner_linkedin     text,
+  add column if not exists enrichment_status  text,
+  add column if not exists enriched_at        timestamptz;
