@@ -67,6 +67,13 @@ def upsert_practices(
         "status",
         "notes",
         "last_touched_by_name",  # derived from join
+        "owner_name",
+        "owner_email",
+        "owner_phone",
+        "owner_title",
+        "owner_linkedin",
+        "enrichment_status",
+        "enriched_at",
     }
     rows = []
     for p in practices:

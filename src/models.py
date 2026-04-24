@@ -46,3 +46,12 @@ class Practice(BaseModel):
     salesforce_synced_at: str | None = None
     call_count: int = 0
     call_notes: str | None = None
+
+    # Clay owner enrichment
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
+    owner_title: str | None = None
+    owner_linkedin: str | None = None
+    enrichment_status: str | None = None
+    enriched_at: str | None = None

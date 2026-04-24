@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     sf_login_url: str = "https://login.salesforce.com"
     sf_api_version: str = "v60.0"
 
+    # Clay owner enrichment
+    clay_table_webhook_url: str = ""
+    clay_table_api_key: str = ""
+    clay_inbound_secret: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"
