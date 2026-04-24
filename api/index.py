@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.analyzer import analyze_practice
 from src.auth import get_admin_client, get_current_user, require_admin
 from src.call_log import append_call_note
+from src.clay import trigger_enrichment
 from src.email_gen import generate_email_draft
 from src.email_poll import poll_replies
 from src.email_send import send_email
@@ -639,3 +640,32 @@ async def call_log_endpoint(
     except LookupError:
         raise HTTPException(404, "Practice not found")
     return {"practice": practice, "sf_warning": warning}
+
+
+# ======================= Clay owner enrichment =======================
+
+
+@app.post("/api/practices/{place_id}/enrich")
+async def enrich_endpoint(
+    place_id: str,
+    user: dict = Depends(get_current_user),
+):
+    existing = get_practice(place_id)
+    if not existing:
+        raise HTTPException(404, "Practice not found")
+
+    from src.models import Practice as _P
+
+    try:
+        trigger_result = await trigger_enrichment(_P(**existing))
+    except Exception as e:
+        final = update_practice_fields(
+            place_id, {"enrichment_status": "failed"}, touched_by=None
+        )
+        return {"practice": final, "clay_warning": f"Enrichment trigger failed: {e}"}
+
+    if trigger_result.get("skipped"):
+        return {"practice": existing, "clay_warning": "Clay not configured. Enrichment skipped."}
+
+    updated = update_practice_fields(place_id, {"enrichment_status": "pending"}, touched_by=None)
+    return {"practice": updated, "clay_warning": None}
