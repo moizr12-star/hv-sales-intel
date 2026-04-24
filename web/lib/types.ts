@@ -43,6 +43,15 @@ export interface Practice {
   salesforce_synced_at: string | null
   call_count: number
   call_notes: string | null
+
+  // Clay owner enrichment
+  owner_name: string | null
+  owner_email: string | null
+  owner_phone: string | null
+  owner_title: string | null
+  owner_linkedin: string | null
+  enrichment_status: "pending" | "enriched" | "failed" | null
+  enriched_at: string | null
 }
 
 export interface EmailMessage {
