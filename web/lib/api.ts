@@ -1,10 +1,13 @@
 import type { EmailDraft, EmailMessage, Practice, Script } from "./types"
 import { mockPractices } from "./mock-data"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ""
+const IS_PROD = process.env.NODE_ENV === "production"
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_URL) throw new Error("NO_API")
+  // Empty API_URL in production = same-origin request (Vercel rewrite handles it).
+  // Empty API_URL in dev = no backend configured -> caller falls back to mocks.
+  if (!API_URL && !IS_PROD) throw new Error("NO_API")
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
