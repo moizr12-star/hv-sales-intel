@@ -1,9 +1,25 @@
 import json
+import logging
+import sys
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+
+# ----- Logging setup (must happen before module imports below) -----
+# Vercel captures anything written to stdout. Force INFO level on the hvsi.*
+# loggers so call_log + salesforce traces show up in `vercel logs`.
+_log_handler = logging.StreamHandler(sys.stdout)
+_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+))
+logging.getLogger("hvsi").handlers = [_log_handler]
+logging.getLogger("hvsi").setLevel(logging.INFO)
+logging.getLogger("hvsi").propagate = False
+log = logging.getLogger("hvsi.api")
 
 from src.analyzer import analyze_practice
 from src.auth import get_admin_client, get_current_user, require_admin
@@ -635,11 +651,44 @@ async def call_log_endpoint(
     body: CallLogRequest,
     user: dict = Depends(get_current_user),
 ):
+    log.info(
+        "[api.call_log] place_id=%s user=%s note_len=%d",
+        place_id, user.get("email"), len(body.note or ""),
+    )
     try:
         practice, warning = await append_call_note(place_id, body.note, user)
     except LookupError:
+        log.warning("[api.call_log.404] place_id=%s", place_id)
         raise HTTPException(404, "Practice not found")
+    log.info(
+        "[api.call_log.response] place_id=%s call_count=%s lead_id=%s warning=%s",
+        place_id, practice.get("call_count"),
+        practice.get("salesforce_lead_id"), warning,
+    )
     return {"practice": practice, "sf_warning": warning}
+
+
+@app.get("/api/debug/env")
+async def debug_env(user: dict = Depends(require_admin)):
+    """Admin-only sanity check: which env vars does the deployed function see?
+
+    Values are not returned — only whether each is set. Lets us verify
+    Vercel env-var configuration without leaking secrets.
+    """
+    return {
+        "supabase_url_set": bool(app_settings.supabase_url),
+        "supabase_service_role_set": bool(app_settings.supabase_service_role_key),
+        "openai_api_key_set": bool(app_settings.openai_api_key),
+        "sf_apex_url_set": bool(app_settings.sf_apex_url),
+        "sf_apex_url_host": (app_settings.sf_apex_url.split("/")[2]
+                             if app_settings.sf_apex_url else None),
+        "sf_api_key_set": bool(app_settings.sf_api_key),
+        "sf_api_key_first6": (app_settings.sf_api_key[:6] + "..."
+                              if app_settings.sf_api_key else None),
+        "clay_inbound_secret_set": bool(app_settings.clay_inbound_secret),
+        "google_maps_set": bool(app_settings.google_maps_api_key),
+        "bootstrap_admin_email": app_settings.bootstrap_admin_email or None,
+    }
 
 
 # ======================= Clay owner enrichment =======================

@@ -1,9 +1,13 @@
+import logging
 from datetime import datetime, timezone
 
 import httpx
 
 from src.models import Practice
 from src.settings import settings
+
+
+log = logging.getLogger("hvsi.salesforce")
 
 
 def is_configured() -> bool:
@@ -69,11 +73,37 @@ def _headers() -> dict:
     }
 
 
+def _redacted_endpoint() -> str:
+    """Return the apex URL with the trailing path only — for logs."""
+    url = settings.sf_apex_url
+    if not url:
+        return "(unset)"
+    # Show host + last path segment only
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        return f"{p.netloc}{p.path}"
+    except Exception:
+        return url
+
+
 async def create_lead(practice: Practice, call_note_line: str) -> dict:
     """POST a new Lead to the Apex endpoint. Returns the parsed JSON response."""
     body = _build_create_payload(practice, call_note_line)
+    log.info(
+        "[sf.create.request] endpoint=%s company=%r note_len=%d call_count=%s",
+        _redacted_endpoint(), body["Company"], len(call_note_line), body["Call_Count__c"],
+    )
     async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(settings.sf_apex_url, headers=_headers(), json=body)
+        try:
+            resp = await client.post(settings.sf_apex_url, headers=_headers(), json=body)
+        except httpx.HTTPError as e:
+            log.error("[sf.create.network_error] err=%r", e)
+            raise
+        log.info(
+            "[sf.create.response] status=%s body=%s",
+            resp.status_code, resp.text[:500],
+        )
         resp.raise_for_status()
     return resp.json()
 
@@ -81,8 +111,20 @@ async def create_lead(practice: Practice, call_note_line: str) -> dict:
 async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> dict:
     """PUT updates to an existing Lead. Returns the parsed JSON response."""
     body = _build_update_payload(sf_lead_id, call_count, call_notes)
+    log.info(
+        "[sf.update.request] endpoint=%s lead_id=%s call_count=%s notes_len=%d",
+        _redacted_endpoint(), sf_lead_id, call_count, len(call_notes),
+    )
     async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.put(settings.sf_apex_url, headers=_headers(), json=body)
+        try:
+            resp = await client.put(settings.sf_apex_url, headers=_headers(), json=body)
+        except httpx.HTTPError as e:
+            log.error("[sf.update.network_error] lead_id=%s err=%r", sf_lead_id, e)
+            raise
+        log.info(
+            "[sf.update.response] lead_id=%s status=%s body=%s",
+            sf_lead_id, resp.status_code, resp.text[:500],
+        )
         resp.raise_for_status()
     return resp.json()
 
@@ -95,11 +137,19 @@ async def sync_practice(practice: Practice, polished_line: str) -> dict:
     network/API failures so the caller can surface a warning.
     """
     if not is_configured():
+        log.warning(
+            "[sf.sync.skipped] reason=not_configured sf_apex_url_set=%s sf_api_key_set=%s",
+            bool(settings.sf_apex_url), bool(settings.sf_api_key),
+        )
         return {"skipped": True, "reason": "sf_not_configured"}
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
     if practice.salesforce_lead_id:
+        log.info(
+            "[sf.sync.update_branch] lead_id=%s call_count=%s",
+            practice.salesforce_lead_id, practice.call_count,
+        )
         await update_lead(
             practice.salesforce_lead_id,
             practice.call_count,
@@ -111,10 +161,13 @@ async def sync_practice(practice: Practice, polished_line: str) -> dict:
             "synced_at": now_iso,
         }
 
+    log.info("[sf.sync.create_branch] practice=%r", practice.name)
     created = await create_lead(practice, polished_line)
     sf_lead_id = created.get("leadId") or created.get("id")
     if not sf_lead_id:
+        log.error("[sf.sync.bad_response] response=%s", created)
         raise RuntimeError(f"Salesforce response missing leadId: {created}")
+    log.info("[sf.sync.created] lead_id=%s", sf_lead_id)
     return {
         "sf_lead_id": sf_lead_id,
         "sf_owner_name": practice.owner_name or "",
