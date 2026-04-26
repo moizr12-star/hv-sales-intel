@@ -29,8 +29,11 @@ export default function CallPrepPage() {
     async function load() {
       let loaded = false
       try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
-        if (API_URL) {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ""
+        const IS_PROD = process.env.NODE_ENV === "production"
+        // In production, an empty NEXT_PUBLIC_API_URL means same-origin
+        // (Vercel rewrites /api/* to the FastAPI handler).
+        if (API_URL || IS_PROD) {
           const res = await fetch(`${API_URL}/api/practices/${placeId}`, { credentials: "include" })
           if (res.ok) {
             setPractice(await res.json())

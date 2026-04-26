@@ -26,8 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     async function hydrate() {
       try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
-        if (!API_URL) return
+        const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ""
+        const IS_PROD = process.env.NODE_ENV === "production"
+        // Skip backend hydration only when there's no API URL AND we're in dev.
+        // In prod, empty API_URL means same-origin (Vercel rewrite handles /api/*).
+        if (!API_URL && !IS_PROD) return
         const res = await fetch(`${API_URL}/api/me`, { credentials: "include" })
         if (res.ok && !cancelled) {
           setUser(await res.json())
