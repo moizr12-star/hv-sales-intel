@@ -16,41 +16,16 @@ async def test_polish_note_returns_empty_marker_for_blank_input():
 
 
 @pytest.mark.asyncio
-async def test_polish_note_uses_gpt_when_configured():
-    response = MagicMock()
-    response.choices = [MagicMock(message=MagicMock(content="Left voicemail. Will retry Thursday."))]
-    create_mock = AsyncMock(return_value=response)
-    client = MagicMock()
-    client.chat.completions.create = create_mock
-
-    with patch("src.call_log.settings") as s:
-        s.openai_api_key = "sk-test"
-        with patch("src.call_log.AsyncOpenAI", return_value=client):
-            result = await call_log.polish_note("left vm, gonna retry thu")
-
-    assert result == "Left voicemail. Will retry Thursday."
-    create_mock.assert_awaited_once()
+async def test_polish_note_returns_raw_text_verbatim():
+    """The rep's exact words must be preserved — no GPT rewriting."""
+    result = await call_log.polish_note("left vm, gonna retry thu")
+    assert result == "left vm, gonna retry thu"
 
 
 @pytest.mark.asyncio
-async def test_polish_note_falls_back_on_openai_error():
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=Exception("boom"))
-
-    with patch("src.call_log.settings") as s:
-        s.openai_api_key = "sk-test"
-        with patch("src.call_log.AsyncOpenAI", return_value=client):
-            result = await call_log.polish_note("raw note")
-
-    assert result == "raw note (unpolished)"
-
-
-@pytest.mark.asyncio
-async def test_polish_note_falls_back_when_no_openai_key():
-    with patch("src.call_log.settings") as s:
-        s.openai_api_key = ""
-        result = await call_log.polish_note("raw note")
-    assert result == "raw note (unpolished)"
+async def test_polish_note_strips_surrounding_whitespace():
+    result = await call_log.polish_note("  spoke with manager  \n")
+    assert result == "spoke with manager"
 
 
 @pytest.mark.asyncio

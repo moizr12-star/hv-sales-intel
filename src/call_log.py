@@ -23,31 +23,11 @@ EMPTY_MARKER = "(call logged, no note)"
 
 
 async def polish_note(raw_note: str) -> str:
-    """Polish a rep's raw call note via GPT. Fail-safe with fallbacks."""
+    """Return the rep's note verbatim. GPT polish is disabled — reps want
+    their exact words preserved in the call log and synced to Salesforce."""
     if not raw_note or not raw_note.strip():
         return EMPTY_MARKER
-
-    if not settings.openai_api_key:
-        return f"{raw_note.strip()} (unpolished)"
-
-    try:
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": POLISH_SYSTEM_PROMPT},
-                {"role": "user", "content": raw_note.strip()},
-            ],
-            temperature=0.3,
-            max_tokens=120,
-        )
-        polished = (response.choices[0].message.content or "").strip()
-        if polished:
-            return polished
-    except Exception:
-        pass
-
-    return f"{raw_note.strip()} (unpolished)"
+    return raw_note.strip()
 
 
 def _format_timestamp() -> str:
