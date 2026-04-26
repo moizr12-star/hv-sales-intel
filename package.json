@@ -1,0 +1,12 @@
+{
+  "name": "hv-sales-intel",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Monorepo root — Next.js app lives in web/, FastAPI in api/. This file exists so Vercel detects Next.js framework.",
+  "dependencies": {
+    "next": "14.2.35"
+  },
+  "scripts": {
+    "build": "cd web && npm install && npm run build"
+  }
+}
