@@ -2,101 +2,99 @@ from datetime import datetime, timezone
 
 import httpx
 
-from src import sf_auth
 from src.models import Practice
 from src.settings import settings
 
 
-def _rating_from_score(score: int | None) -> str:
-    if score is None:
-        return "Warm"
-    if score >= 75:
-        return "Hot"
-    if score >= 50:
-        return "Warm"
-    return "Cold"
+def is_configured() -> bool:
+    """True when both Apex endpoint URL and API key are set."""
+    return bool(settings.sf_apex_url and settings.sf_api_key)
 
 
-def _build_lead_payload(practice: Practice, call_note_line: str) -> dict:
-    """Build the POST body for creating a Lead from a Practice."""
+def _scores_description(practice: Practice) -> str | None:
+    scores = (practice.lead_score, practice.urgency_score, practice.hiring_signal_score)
+    if all(s is None for s in scores):
+        return None
+    return (
+        f"Lead Score: {practice.lead_score or 0} | "
+        f"Urgency: {practice.urgency_score or 0} | "
+        f"Hiring Signal: {practice.hiring_signal_score or 0}"
+    )
+
+
+def _build_create_payload(practice: Practice, call_note_line: str) -> dict:
+    """Build the POST body for the Apex REST Lead create endpoint.
+
+    Includes every field the Apex handler expects, including the required
+    custom field Lead_Type__c. Omits None values so Salesforce keeps its
+    own defaults rather than receiving "None" strings.
+    """
     payload: dict = {
         "Company": practice.name,
-        "LastName": "Office",
+        "OwnerName": practice.owner_name or "",
+        "OwnerPhone": practice.owner_phone or practice.phone or "",
+        "OwnerEmail": practice.owner_email or "",
+        "Email": practice.email or "",
+        "Website": practice.website or "",
+        "Street": practice.address or "",
+        "City": practice.city or "",
+        "State": practice.state or "",
+        "PostalCode": "",
+        "Country": "USA",
         "Industry": "Healthcare",
         "LeadSource": "HV Sales Intel",
         "Status": "Working - Contacted",
-        "Rating": _rating_from_score(practice.lead_score),
-        "Call_Count__c": 1,
+        "Lead_Type__c": "Outbound",
+        "Description": _scores_description(practice) or "",
+        "Call_Count__c": str(practice.call_count or 1),
         "Call_Notes__c": call_note_line,
     }
-    if practice.phone:
-        payload["Phone"] = practice.phone
-    if practice.email:
-        payload["Email"] = practice.email
-    if practice.website:
-        payload["Website"] = practice.website
-    if practice.address:
-        payload["Street"] = practice.address
-    if practice.city:
-        payload["City"] = practice.city
-
-    scores = [practice.lead_score, practice.urgency_score, practice.hiring_signal_score]
-    if any(s is not None for s in scores):
-        payload["Description"] = (
-            f"Lead Score: {practice.lead_score or 0} | "
-            f"Urgency: {practice.urgency_score or 0} | "
-            f"Hiring Signal: {practice.hiring_signal_score or 0}"
-        )
     return payload
 
 
+def _build_update_payload(sf_lead_id: str, call_count: int, call_notes: str) -> dict:
+    return {
+        "Id": sf_lead_id,
+        "Status": "Working - Contacted",
+        "Lead_Type__c": "Outbound",
+        "Call_Count__c": str(call_count),
+        "Call_Notes__c": call_notes,
+    }
+
+
+def _headers() -> dict:
+    return {
+        "Content-Type": "application/json",
+        "x-api-key": settings.sf_api_key,
+    }
+
+
 async def create_lead(practice: Practice, call_note_line: str) -> dict:
-    """POST to SF sobjects/Lead/. Returns the SF response body."""
-    token, instance_url = await sf_auth.get_access_token()
-    url = f"{instance_url}/services/data/{settings.sf_api_version}/sobjects/Lead/"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    body = _build_lead_payload(practice, call_note_line)
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(url, headers=headers, json=body)
+    """POST a new Lead to the Apex endpoint. Returns the parsed JSON response."""
+    body = _build_create_payload(practice, call_note_line)
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(settings.sf_apex_url, headers=_headers(), json=body)
         resp.raise_for_status()
     return resp.json()
 
 
-async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> None:
-    """PATCH call log fields on an existing Lead. 204 on success."""
-    token, instance_url = await sf_auth.get_access_token()
-    url = f"{instance_url}/services/data/{settings.sf_api_version}/sobjects/Lead/{sf_lead_id}"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    body = {"Call_Count__c": call_count, "Call_Notes__c": call_notes}
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.patch(url, headers=headers, json=body)
+async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> dict:
+    """PUT updates to an existing Lead. Returns the parsed JSON response."""
+    body = _build_update_payload(sf_lead_id, call_count, call_notes)
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.put(settings.sf_apex_url, headers=_headers(), json=body)
         resp.raise_for_status()
-
-
-async def get_owner(sf_lead_id: str) -> tuple[str, str]:
-    """GET Id, OwnerId, Owner.Name for a Lead."""
-    token, instance_url = await sf_auth.get_access_token()
-    url = (
-        f"{instance_url}/services/data/{settings.sf_api_version}"
-        f"/sobjects/Lead/{sf_lead_id}"
-    )
-    params = {"fields": "Id,OwnerId,Owner.Name"}
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url, headers=headers, params=params)
-        resp.raise_for_status()
-    data = resp.json()
-    return data["OwnerId"], data.get("Owner", {}).get("Name", "")
+    return resp.json()
 
 
 async def sync_practice(practice: Practice, polished_line: str) -> dict:
-    """Create or update the SF Lead for this practice.
+    """Create or update the SF Lead for this practice via the Apex endpoint.
 
-    Returns dict with SF fields on success, or {'skipped': True, 'reason': ...}
-    when SF is not configured. Raises on network/API failures so the caller
-    can decide how to surface them.
+    Returns dict with sf_lead_id + synced_at on success, or
+    {'skipped': True, 'reason': ...} when SF is not configured. Raises on
+    network/API failures so the caller can surface a warning.
     """
-    if not sf_auth.is_configured():
+    if not is_configured():
         return {"skipped": True, "reason": "sf_not_configured"}
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -107,20 +105,18 @@ async def sync_practice(practice: Practice, polished_line: str) -> dict:
             practice.call_count,
             practice.call_notes or "",
         )
-        owner_id, owner_name = await get_owner(practice.salesforce_lead_id)
         return {
             "sf_lead_id": practice.salesforce_lead_id,
-            "sf_owner_id": owner_id,
-            "sf_owner_name": owner_name,
+            "sf_owner_name": practice.owner_name or "",
             "synced_at": now_iso,
         }
 
     created = await create_lead(practice, polished_line)
-    sf_lead_id = created["id"]
-    owner_id, owner_name = await get_owner(sf_lead_id)
+    sf_lead_id = created.get("leadId") or created.get("id")
+    if not sf_lead_id:
+        raise RuntimeError(f"Salesforce response missing leadId: {created}")
     return {
         "sf_lead_id": sf_lead_id,
-        "sf_owner_id": owner_id,
-        "sf_owner_name": owner_name,
+        "sf_owner_name": practice.owner_name or "",
         "synced_at": now_iso,
     }
