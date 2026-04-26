@@ -95,8 +95,7 @@ async def test_append_call_note_sets_sf_fields_when_sync_succeeds():
 
     sync_result = {
         "sf_lead_id": "00Q_NEW",
-        "sf_owner_id": "005XYZ",
-        "sf_owner_name": "Sarah Khan",
+        "sf_owner_name": "Office Manager",
         "synced_at": "2026-04-23T10:22:00+00:00",
     }
 
@@ -107,9 +106,9 @@ async def test_append_call_note_sets_sf_fields_when_sync_succeeds():
                     await call_log.append_call_note("abc", "raw", user)
 
     assert stored["salesforce_lead_id"] == "00Q_NEW"
-    assert stored["salesforce_owner_id"] == "005XYZ"
-    assert stored["salesforce_owner_name"] == "Sarah Khan"
+    assert stored["salesforce_owner_name"] == "Office Manager"
     assert stored["salesforce_synced_at"] == "2026-04-23T10:22:00+00:00"
+    assert "salesforce_owner_id" not in stored
 
 
 @pytest.mark.asyncio

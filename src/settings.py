@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     ms_sender_email: str = ""
     email_reply_lookback_days: int = 30
 
-    # Salesforce integration (username-password OAuth)
+    # Salesforce integration (Apex REST endpoint + x-api-key)
+    sf_apex_url: str = ""
+    sf_api_key: str = ""
+    # Legacy OAuth fields (no longer used; kept for backwards compatibility with existing .env files)
     sf_client_id: str = ""
     sf_client_secret: str = ""
     sf_username: str = ""

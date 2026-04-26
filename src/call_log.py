@@ -87,9 +87,11 @@ async def append_call_note(
         sync_result = await salesforce.sync_practice(sync_view, line)
         if not sync_result.get("skipped"):
             updates["salesforce_lead_id"] = sync_result["sf_lead_id"]
-            updates["salesforce_owner_id"] = sync_result["sf_owner_id"]
-            updates["salesforce_owner_name"] = sync_result["sf_owner_name"]
             updates["salesforce_synced_at"] = sync_result["synced_at"]
+            if "sf_owner_id" in sync_result:
+                updates["salesforce_owner_id"] = sync_result["sf_owner_id"]
+            if "sf_owner_name" in sync_result:
+                updates["salesforce_owner_name"] = sync_result["sf_owner_name"]
     except Exception as e:
         warning = f"Salesforce sync failed: {e}. Local log saved."
 
