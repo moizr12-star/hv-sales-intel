@@ -30,14 +30,14 @@ export default function NotesPanel({ notes: initialNotes, onSave }: NotesPanelPr
       <div>
         <h3 className="font-serif font-semibold text-gray-900">Lead Notes</h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Synced to the Salesforce Lead&apos;s Description. Use the <span className="font-semibold">Call</span> button to log a call to <span className="font-semibold">Call_Notes__c</span> instead.
+          Saved to the Salesforce Lead&apos;s <span className="font-semibold">Call_Notes__c</span> field.
         </p>
       </div>
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         onBlur={handleSave}
-        placeholder="Notes about this lead — these go to the Salesforce Lead's Description field..."
+        placeholder="Notes about this lead..."
         className="w-full h-48 text-sm p-3 rounded-lg border border-gray-200 bg-white/80
                    placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40
                    resize-none"

@@ -641,25 +641,26 @@ async def patch_practice(
         raise HTTPException(status_code=404, detail="Practice not found")
 
     # If notes changed AND practice has a Salesforce Lead, push the notes
-    # into the Lead's Description field. Fail-soft: log + return sf_warning,
-    # never block the local save.
+    # into the Lead's Call_Notes__c field (overwriting). Fail-soft: log
+    # + return sf_warning, never block the local save.
     if body.notes is not None and updated.get("salesforce_lead_id"):
         from src import salesforce
         if salesforce.is_configured():
             try:
-                await salesforce.update_lead_description(
-                    updated["salesforce_lead_id"], body.notes,
+                await salesforce.update_lead(
+                    updated["salesforce_lead_id"],
+                    updated.get("call_count") or 0,
+                    body.notes,
                 )
                 log.info(
-                    "[api.patch_practice.sf_desc_synced] place_id=%s lead_id=%s",
+                    "[api.patch_practice.sf_call_notes_synced] place_id=%s lead_id=%s",
                     place_id, updated["salesforce_lead_id"],
                 )
             except Exception as e:
                 log.exception(
-                    "[api.patch_practice.sf_desc_failed] place_id=%s err=%r",
+                    "[api.patch_practice.sf_call_notes_failed] place_id=%s err=%r",
                     place_id, e,
                 )
-                # Surface failure to the client but keep the local save.
                 return {**updated, "sf_warning": f"Salesforce notes sync failed: {e}"}
 
     return updated
