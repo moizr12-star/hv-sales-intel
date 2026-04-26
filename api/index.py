@@ -615,7 +615,7 @@ class PatchPracticeRequest(BaseModel):
 
 
 @app.patch("/api/practices/{place_id}")
-def patch_practice(
+async def patch_practice(
     place_id: str,
     body: PatchPracticeRequest,
     user: dict = Depends(get_current_user),
@@ -632,9 +632,36 @@ def patch_practice(
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    log.info(
+        "[api.patch_practice] place_id=%s user=%s fields=%s",
+        place_id, user.get("email"), list(fields.keys()),
+    )
     updated = update_practice_fields(place_id, fields, touched_by=user["id"])
     if not updated:
         raise HTTPException(status_code=404, detail="Practice not found")
+
+    # If notes changed AND practice has a Salesforce Lead, push the notes
+    # into the Lead's Description field. Fail-soft: log + return sf_warning,
+    # never block the local save.
+    if body.notes is not None and updated.get("salesforce_lead_id"):
+        from src import salesforce
+        if salesforce.is_configured():
+            try:
+                await salesforce.update_lead_description(
+                    updated["salesforce_lead_id"], body.notes,
+                )
+                log.info(
+                    "[api.patch_practice.sf_desc_synced] place_id=%s lead_id=%s",
+                    place_id, updated["salesforce_lead_id"],
+                )
+            except Exception as e:
+                log.exception(
+                    "[api.patch_practice.sf_desc_failed] place_id=%s err=%r",
+                    place_id, e,
+                )
+                # Surface failure to the client but keep the local save.
+                return {**updated, "sf_warning": f"Salesforce notes sync failed: {e}"}
+
     return updated
 
 

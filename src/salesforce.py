@@ -129,6 +129,37 @@ async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> dict
     return resp.json()
 
 
+async def update_lead_description(sf_lead_id: str, description: str) -> dict:
+    """PUT only the Description field on an existing Lead.
+
+    Used by the Notes panel: rep's free-text notes go into the Lead's
+    Description field on Salesforce, separate from the per-call log
+    that lives in Call_Notes__c.
+    """
+    body = {
+        "Id": sf_lead_id,
+        "Status": "Working - Contacted",
+        "Lead_Type__c": "Outbound",
+        "Description": description or "",
+    }
+    log.info(
+        "[sf.update_desc.request] endpoint=%s lead_id=%s desc_len=%d",
+        _redacted_endpoint(), sf_lead_id, len(description or ""),
+    )
+    async with httpx.AsyncClient(timeout=20) as client:
+        try:
+            resp = await client.put(settings.sf_apex_url, headers=_headers(), json=body)
+        except httpx.HTTPError as e:
+            log.error("[sf.update_desc.network_error] lead_id=%s err=%r", sf_lead_id, e)
+            raise
+        log.info(
+            "[sf.update_desc.response] lead_id=%s status=%s body=%s",
+            sf_lead_id, resp.status_code, resp.text[:500],
+        )
+        resp.raise_for_status()
+    return resp.json()
+
+
 async def sync_practice(practice: Practice, polished_line: str) -> dict:
     """Create or update the SF Lead for this practice via the Apex endpoint.
 
