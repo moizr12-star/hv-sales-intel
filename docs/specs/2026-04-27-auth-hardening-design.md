@@ -20,6 +20,7 @@ Tighten the existing admin-managed auth flow with three guardrails:
 - Bootstrap admin startup hook validates the env-supplied password and fails fast with a clear error if non-compliant.
 - Frontend: "Change password" entry in the user menu, opens a modal; live complexity hints; submit + error rendering.
 - Frontend: Admin Users page hides/disables "Reset password" on other admin rows when caller isn't the bootstrap admin.
+- **Rename role string `"rep"` → `"sdr"` everywhere** (data + code + UI labels). Display label is `"SDR"`; stored value is lowercase `"sdr"`.
 - Tests for validators + endpoint behavior + role-based access.
 
 ### Out of scope
@@ -253,6 +254,42 @@ The existing reset-password prompt accepts any string. Add the same complexity r
 
 Frontend: typecheck-only (no unit tests in this codebase).
 
+## `rep` → `sdr` rename
+
+Stored value lowercased to match the existing `"admin"` / `"rep"` convention. UI displays uppercase `"SDR"`.
+
+### One-time DB migration (manual, Supabase SQL editor)
+
+```sql
+update profiles set role = 'sdr' where role = 'rep';
+```
+
+No schema change — `role` is a free-text column. The migration is a data update only. Idempotent (running twice is a no-op).
+
+### Backend touch points
+
+- `api/index.py`:
+  - `CreateUserRequest.role: str = "rep"` → `"sdr"` (default value).
+  - `if body.role not in ("admin", "rep")` → `("admin", "sdr")` in `create_user`.
+  - Any code that branches on `role == "rep"` switches to `"sdr"` (none today, but worth a final grep before merging).
+- `src/auth.py`: `require_admin` already keys off `"admin"` so no change needed. `get_current_user` doesn't care about role names.
+- `tests/conftest.py`:
+  - Fixture `sample_rep_profile` → renamed to `sample_sdr_profile`. The dict's `"role"` field changes from `"rep"` to `"sdr"`.
+  - All tests that import / use `sample_rep_profile` are updated by find-replace.
+
+### Frontend touch points
+
+- `web/lib/types.ts`: `User.role: "admin" | "rep"` → `"admin" | "sdr"`.
+- `web/app/admin/users/page.tsx`:
+  - Create-user form's role select: option label `"Rep"` → `"SDR"`, option value `"rep"` → `"sdr"`. Default selected value updated.
+  - Role badge / display in the user list: `"rep"` → display as `"SDR"` (uppercase). Suggest a tiny helper `roleLabel(role)` returning `"Admin"` or `"SDR"` to keep render logic clean.
+- Anywhere copy says "rep" in the UI (search for `\brep\b` in `web/`): swap to "SDR".
+
+### Backwards compatibility
+
+- A profile with the legacy `role: "rep"` after deploy but before the migration runs would behave the same as a non-admin (since `require_admin` checks for `== "admin"`). UX won't break for users; only the create-user role validator would reject `"rep"` if anyone sent it via the API directly.
+- Once the SQL migration runs, no `"rep"` rows remain.
+
 ## Env vars
 
 No new env vars. Reuses `BOOTSTRAP_ADMIN_EMAIL` to identify the bootstrap admin at runtime.
@@ -266,6 +303,7 @@ No new env vars. Reuses `BOOTSTRAP_ADMIN_EMAIL` to identify the bootstrap admin 
 5. **Modal, not `/account` page.** Compact; no separate route to maintain. Future settings page can host this modal as one of multiple sections.
 6. **No password expiry / no history.** Defer until compliance requires it.
 7. **Validators raise `ValueError` rather than returning a tuple.** Pydantic-friendly, simple control flow, matches existing convention in `email_send.py` etc.
+8. **Role stored lowercased (`"sdr"`), displayed uppercase (`"SDR"`).** Matches existing `"admin"` storage convention; UI normalization keeps the wire format predictable.
 
 ## Success criteria
 
