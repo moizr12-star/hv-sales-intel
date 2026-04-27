@@ -77,6 +77,31 @@ export default function PracticeInfo({
         )}
       </div>
 
+      {(practice.website_doctor_name || practice.website_doctor_phone) && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 mb-1">From website</h4>
+          <div className="space-y-0.5">
+            {practice.website_doctor_name && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Doctor</span>
+                <span className="text-gray-900">{practice.website_doctor_name}</span>
+              </div>
+            )}
+            {practice.website_doctor_phone && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Direct line</span>
+                <a
+                  href={`tel:${practice.website_doctor_phone.replace(/\D/g, "")}`}
+                  className="text-teal-700 hover:underline"
+                >
+                  {practice.website_doctor_phone}
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div>
         <h4 className="text-xs font-semibold text-gray-700 mb-1">Owner</h4>
         {practice.enrichment_status === "pending" ? (
