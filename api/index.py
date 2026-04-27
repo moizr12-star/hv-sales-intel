@@ -934,4 +934,6 @@ def clay_webhook(
     fields["enriched_at"] = datetime.now(timezone.utc).isoformat()
 
     update_practice_fields(body.place_id, fields, touched_by=None)
+    if has_any_contact:
+        add_tags(body.place_id, ["ENRICHED"])
     return {"ok": True}

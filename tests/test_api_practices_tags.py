@@ -78,3 +78,44 @@ def test_get_script_appends_script_ready_tag(sample_admin_profile):
 
     assert resp.status_code == 200
     add_tags_mock.assert_any_call("p1", ["SCRIPT_READY"])
+
+
+# ---------- Clay webhook → ENRICHED ----------
+
+
+def test_clay_webhook_appends_enriched_tag_on_success():
+    existing = {"place_id": "p1", "name": "X", "tags": []}
+
+    with patch("api.index.app_settings") as s, \
+         patch("api.index.get_practice", return_value=existing), \
+         patch("api.index.update_practice_fields"), \
+         patch("api.index.add_tags") as add_tags_mock:
+        s.clay_inbound_secret = "secret"
+        client = TestClient(app)
+        resp = client.post(
+            "/api/webhooks/clay",
+            headers={"X-Clay-Secret": "secret"},
+            json={"place_id": "p1", "owner_name": "Dr. Y", "owner_email": "y@y.com"},
+        )
+
+    assert resp.status_code == 200
+    add_tags_mock.assert_any_call("p1", ["ENRICHED"])
+
+
+def test_clay_webhook_does_not_tag_on_no_contact():
+    existing = {"place_id": "p1", "name": "X", "tags": []}
+
+    with patch("api.index.app_settings") as s, \
+         patch("api.index.get_practice", return_value=existing), \
+         patch("api.index.update_practice_fields"), \
+         patch("api.index.add_tags") as add_tags_mock:
+        s.clay_inbound_secret = "secret"
+        client = TestClient(app)
+        resp = client.post(
+            "/api/webhooks/clay",
+            headers={"X-Clay-Secret": "secret"},
+            json={"place_id": "p1"},  # no owner data
+        )
+
+    assert resp.status_code == 200
+    add_tags_mock.assert_not_called()
