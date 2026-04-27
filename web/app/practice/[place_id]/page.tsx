@@ -14,11 +14,14 @@ import ActionsPanel from "@/components/actions-panel"
 import EmailPanel from "@/components/email-panel"
 import CallLogTab from "@/components/call-log-tab"
 import StatusBadge, { ALL_STATUSES } from "@/components/status-badge"
+import AssignDropdown from "@/components/assign-dropdown"
+import { useAuth } from "@/lib/auth"
 
 export default function CallPrepPage() {
   const params = useParams()
   const router = useRouter()
   const placeId = params.place_id as string
+  const { user: currentUser } = useAuth()
 
   const [practice, setPractice] = useState<Practice | null>(null)
   const [sections, setSections] = useState<ScriptSection[]>([])
@@ -123,6 +126,17 @@ export default function CallPrepPage() {
             ))}
           </select>
           <StatusBadge status={practice.status} />
+          {currentUser?.role === "admin" && (
+            <>
+              <span className="text-sm text-gray-500 ml-2">Owner:</span>
+              <AssignDropdown
+                practice={practice}
+                onChange={(next) =>
+                  setPractice((prev) => (prev ? { ...prev, ...next } : prev))
+                }
+              />
+            </>
+          )}
           {practice.last_touched_by_name && practice.last_touched_at && (
             <span className="text-xs text-gray-400">
               by {practice.last_touched_by_name} · {timeAgo(practice.last_touched_at)}
