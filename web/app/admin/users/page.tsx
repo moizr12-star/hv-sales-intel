@@ -10,6 +10,7 @@ interface AdminUser {
   email: string
   name: string | null
   role: "admin" | "sdr"
+  disabled_at: string | null
   created_at: string
   practices_touched: number
 }
@@ -25,6 +26,11 @@ export default function AdminUsersPage() {
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null)
   const [resetPassword, setResetPassword] = useState("")
   const [resetting, setResetting] = useState(false)
+
+  const [editTarget, setEditTarget] = useState<AdminUser | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editRole, setEditRole] = useState<"admin" | "sdr">("sdr")
+  const [editing, setEditing] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
@@ -79,6 +85,58 @@ export default function AdminUsersPage() {
     })
     if (res.ok) load()
     else setError(`HTTP ${res.status}`)
+  }
+
+  async function patchUser(id: string, body: { name?: string; role?: string; disabled?: boolean }) {
+    const res = await fetch(`${API_URL}/api/admin/users/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.detail ?? `HTTP ${res.status}`)
+    }
+    return res.json()
+  }
+
+  async function handleEditSave() {
+    if (!editTarget) return
+    setEditing(true)
+    setError(null)
+    try {
+      const body: { name?: string; role?: string } = {}
+      if (editName !== (editTarget.name ?? "")) body.name = editName
+      if (editRole !== editTarget.role) body.role = editRole
+      if (Object.keys(body).length > 0) {
+        await patchUser(editTarget.id, body)
+      }
+      setEditTarget(null)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  function openEdit(u: AdminUser) {
+    setEditTarget(u)
+    setEditName(u.name ?? "")
+    setEditRole(u.role)
+  }
+
+  async function handleToggleDisable(u: AdminUser) {
+    const action = u.disabled_at ? "enable" : "disable"
+    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${u.email}?`)) return
+    setError(null)
+    try {
+      await patchUser(u.id, { disabled: !u.disabled_at })
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async function handleReset(target: AdminUser) {
@@ -193,9 +251,20 @@ export default function AdminUsersPage() {
               <tbody>
                 {users.map((u) => {
                   const blocked = u.role === "admin" && !user.is_bootstrap_admin
+                  const disabled = !!u.disabled_at
                   return (
-                    <tr key={u.id} className="border-t border-gray-200/50">
-                      <td className="p-3">{u.email}</td>
+                    <tr
+                      key={u.id}
+                      className={`border-t border-gray-200/50 ${disabled ? "opacity-50" : ""}`}
+                    >
+                      <td className="p-3">
+                        {u.email}
+                        {disabled && (
+                          <span className="ml-2 text-[10px] uppercase tracking-wide bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                            Disabled
+                          </span>
+                        )}
+                      </td>
                       <td className="p-3">{u.name ?? "—"}</td>
                       <td className="p-3 uppercase">{u.role}</td>
                       <td className="p-3">{u.practices_touched}</td>
@@ -203,6 +272,18 @@ export default function AdminUsersPage() {
                       <td className="p-3 text-right space-x-3">
                         {u.id !== user.id && (
                           <>
+                            <button
+                              onClick={() => !blocked && openEdit(u)}
+                              disabled={blocked}
+                              title={blocked
+                                ? "Only the bootstrap admin can edit another admin."
+                                : "Edit user"}
+                              className={`text-xs underline ${blocked
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-teal-700 hover:text-teal-900"}`}
+                            >
+                              Edit
+                            </button>
                             <button
                               onClick={() => !blocked && setResetTarget(u)}
                               disabled={blocked}
@@ -214,6 +295,20 @@ export default function AdminUsersPage() {
                                 : "text-teal-700 hover:text-teal-900"}`}
                             >
                               Reset password
+                            </button>
+                            <button
+                              onClick={() => !blocked && handleToggleDisable(u)}
+                              disabled={blocked}
+                              title={blocked
+                                ? "Only the bootstrap admin can disable another admin."
+                                : disabled ? "Enable user" : "Disable user"}
+                              className={`text-xs underline ${blocked
+                                ? "text-gray-300 cursor-not-allowed"
+                                : disabled
+                                  ? "text-teal-700 hover:text-teal-900"
+                                  : "text-amber-700 hover:text-amber-900"}`}
+                            >
+                              {disabled ? "Enable" : "Disable"}
                             </button>
                             <button
                               onClick={() => handleDelete(u.id)}
@@ -232,6 +327,65 @@ export default function AdminUsersPage() {
             </table>
           )}
         </section>
+
+        {editTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => !editing && setEditTarget(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-xl bg-white shadow-xl p-5 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-serif text-base font-bold">
+                Edit {editTarget.email}
+              </h3>
+              <label className="block">
+                <span className="text-xs text-gray-500">Name</span>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full text-sm mt-1 rounded-lg border border-gray-200 px-3 py-2"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-gray-500">Role</span>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as "admin" | "sdr")}
+                  disabled={!user.is_bootstrap_admin && (editTarget.role === "admin" || editRole === "admin")}
+                  className="w-full text-sm mt-1 rounded-lg border border-gray-200 px-3 py-2"
+                >
+                  <option value="sdr">SDR</option>
+                  <option value="admin">Admin</option>
+                </select>
+                {!user.is_bootstrap_admin && (
+                  <span className="text-[11px] text-gray-400">
+                    Only the bootstrap admin can change admin roles.
+                  </span>
+                )}
+              </label>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setEditTarget(null)}
+                  disabled={editing}
+                  className="text-xs px-3 py-1.5 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleEditSave}
+                  disabled={editing}
+                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                >
+                  {editing && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {editing ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {resetTarget && (
           <div
