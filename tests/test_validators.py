@@ -17,6 +17,10 @@ def test_validate_email_accepts_uppercase_local_part():
     validate_email("Sarah.Khan@healthandgroup.com")
 
 
+def test_validate_email_accepts_healthandvirtuals_domain():
+    validate_email("sarah@healthandvirtuals.com")
+
+
 def test_validate_email_rejects_missing_at():
     with pytest.raises(ValueError, match="format"):
         validate_email("sarahhealthandgroup.com")

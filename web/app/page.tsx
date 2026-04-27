@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import { Suspense, useState, useMemo, useCallback, useEffect, useRef } from "react"
 import dynamic from "next/dynamic"
 import type { Practice } from "@/lib/types"
 import { mockPractices } from "@/lib/mock-data"
@@ -19,6 +19,14 @@ import {
 const MapView = dynamic(() => import("@/components/map-view"), { ssr: false })
 
 export default function Page() {
+  return (
+    <Suspense fallback={<div className="h-screen w-screen" />}>
+      <PageContent />
+    </Suspense>
+  )
+}
+
+function PageContent() {
   const { user: currentUser } = useAuth()
   const [filters, setFilters] = useUrlState()
   const sidebarRef = useRef<HTMLDivElement>(null)
