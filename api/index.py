@@ -30,6 +30,7 @@ from src.email_poll import poll_replies
 from src.email_send import send_email
 from src.models import Practice
 from src.places import get_place, search_places
+from src.reviews import fetch_reviews
 from src.scriptgen import generate_script
 from src.settings import settings as app_settings
 from src.storage import (
@@ -728,13 +729,7 @@ async def get_script(place_id: str, user: dict = Depends(get_current_user)):
     if practice.get("call_script"):
         return json.loads(practice["call_script"])
 
-    script = await generate_script(
-        name=practice["name"],
-        category=practice.get("category"),
-        summary=practice.get("summary"),
-        pain_points=practice.get("pain_points"),
-        sales_angles=practice.get("sales_angles"),
-    )
+    script = await _build_personalized_script(practice)
 
     update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
     add_tags(place_id, ["SCRIPT_READY"])
@@ -752,17 +747,45 @@ async def regenerate_script_endpoint(place_id: str, user: dict = Depends(get_cur
     if not practice:
         raise HTTPException(status_code=404, detail="Practice not found")
 
-    script = await generate_script(
+    script = await _build_personalized_script(practice)
+
+    update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
+    add_tags(place_id, ["SCRIPT_READY"])
+    return script
+
+
+async def _build_personalized_script(practice: dict) -> dict:
+    """Build script generation context from a practice row, fetch fresh review
+    excerpts, and return the generated playbook."""
+    try:
+        reviews = await fetch_reviews(
+            practice["place_id"],
+            name=practice.get("name"),
+            city=practice.get("city"),
+            state=practice.get("state"),
+            website=practice.get("website"),
+        )
+    except Exception:
+        reviews = []
+    review_excerpts = sorted(
+        [r["text"] for r in (reviews or []) if r.get("text")],
+        key=len,
+    )[:3]
+    return await generate_script(
         name=practice["name"],
         category=practice.get("category"),
         summary=practice.get("summary"),
         pain_points=practice.get("pain_points"),
         sales_angles=practice.get("sales_angles"),
+        city=practice.get("city"),
+        state=practice.get("state"),
+        rating=practice.get("rating"),
+        review_count=practice.get("review_count"),
+        website_doctor_name=practice.get("website_doctor_name"),
+        owner_name=practice.get("owner_name"),
+        owner_title=practice.get("owner_title"),
+        review_excerpts=review_excerpts,
     )
-
-    update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
-    add_tags(place_id, ["SCRIPT_READY"])
-    return script
 
 
 class PatchPracticeRequest(BaseModel):

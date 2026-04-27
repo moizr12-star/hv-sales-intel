@@ -118,6 +118,46 @@ def test_get_script_appends_script_ready_tag(sample_admin_profile):
     add_tags_mock.assert_any_call("p1", ["SCRIPT_READY"])
 
 
+def test_get_script_passes_personalization_context(sample_admin_profile):
+    _override_user(sample_admin_profile)
+    existing = {
+        "place_id": "p1", "name": "Smile Dental", "status": "RESEARCHED",
+        "tags": ["RESEARCHED"], "category": "dental",
+        "summary": "s", "pain_points": "[]", "sales_angles": "[]",
+        "city": "Boise", "state": "ID", "rating": 4.5, "review_count": 30,
+        "website_doctor_name": "Dr. Sarah Smith",
+        "website": "http://smile.example.com",
+        "owner_name": None, "owner_title": None,
+        "call_script": None,
+    }
+    captured: dict = {}
+
+    async def _agen(**kwargs):
+        captured.update(kwargs)
+        return {"sections": [{"title": "Opening", "icon": "phone", "content": "..."}] * 5}
+
+    async def _afetch(*args, **kwargs):
+        return [
+            {"text": "Long wait times in lobby", "rating": 2, "source": "Google", "url": None},
+            {"text": "Friendly staff", "rating": 5, "source": "Google", "url": None},
+        ]
+
+    with patch("api.index.get_practice", return_value=existing), \
+         patch("api.index.fetch_reviews", new=_afetch), \
+         patch("api.index.generate_script", new=_agen), \
+         patch("api.index.update_practice_fields"), \
+         patch("api.index.add_tags"):
+        client = TestClient(app)
+        resp = client.get("/api/practices/p1/script")
+
+    assert resp.status_code == 200
+    assert captured["website_doctor_name"] == "Dr. Sarah Smith"
+    assert captured["city"] == "Boise"
+    assert captured["rating"] == 4.5
+    assert captured["review_excerpts"] is not None
+    assert any("Long wait times" in ex for ex in captured["review_excerpts"])
+
+
 # ---------- Clay webhook → ENRICHED ----------
 
 
