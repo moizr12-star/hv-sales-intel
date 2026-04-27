@@ -734,6 +734,7 @@ async def get_script(place_id: str, user: dict = Depends(get_current_user)):
     )
 
     update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
+    add_tags(place_id, ["SCRIPT_READY"])
 
     current_status = practice.get("status", "NEW")
     if _should_auto_advance(current_status, "SCRIPT READY"):
@@ -757,6 +758,7 @@ async def regenerate_script_endpoint(place_id: str, user: dict = Depends(get_cur
     )
 
     update_practice_fields(place_id, {"call_script": json.dumps(script)}, touched_by=user["id"])
+    add_tags(place_id, ["SCRIPT_READY"])
     return script
 
 
