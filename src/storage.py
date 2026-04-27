@@ -198,6 +198,32 @@ def list_email_messages(practice_id: int) -> list[dict]:
     return result.data or []
 
 
+def add_tags(place_id: str, new_tags: list[str]) -> None:
+    """Append tags to a practice's tags array, deduped. No-op if list empty.
+
+    Reads current tags, computes union, writes back. Two roundtrips is fine
+    for our write rate; postgres array_cat is not exposed via the PostgREST
+    client, so this read-modify-write pattern is the simplest reliable shape.
+    """
+    if not new_tags:
+        return
+    client = _get_client()
+    if not client:
+        return
+    try:
+        result = (
+            client.table("practices").select("tags")
+            .eq("place_id", place_id).maybe_single().execute()
+        )
+    except Exception:
+        return
+    existing = (result.data or {}).get("tags") or []
+    merged = sorted(set(existing) | set(new_tags))
+    if sorted(existing) == merged:
+        return  # nothing new
+    client.table("practices").update({"tags": merged}).eq("place_id", place_id).execute()
+
+
 def list_outbound_message_ids(practice_id: int) -> list[str]:
     """Return all outbound message_ids for a practice (used by poll threading)."""
     client = _get_client()
