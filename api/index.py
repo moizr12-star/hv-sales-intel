@@ -172,7 +172,32 @@ def reset_password(
     body: ResetPasswordRequest,
     admin: dict = Depends(require_admin),
 ):
+    from src.auth import is_bootstrap_admin
+    from src.validators import validate_password
+
+    try:
+        validate_password(body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     client = get_admin_client()
+    target = (
+        client.table("profiles")
+        .select("*")
+        .eq("id", user_id)
+        .single()
+        .execute()
+        .data
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.get("role") == "admin" and not is_bootstrap_admin(admin):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the bootstrap admin can reset another admin's password.",
+        )
+
     try:
         client.auth.admin.update_user_by_id(user_id, {"password": body.new_password})
     except Exception as e:

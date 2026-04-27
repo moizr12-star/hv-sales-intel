@@ -100,3 +100,88 @@ def test_create_user_happy_path(sample_admin_profile):
 
     assert resp.status_code == 200
     assert resp.json()["email"] == "rep@healthandgroup.com"
+
+
+# ---------- reset password ----------
+
+
+def test_reset_rejects_weak_password(sample_admin_profile):
+    _override_admin(sample_admin_profile)
+    client = TestClient(app)
+    resp = client.post("/api/admin/users/some-id/reset-password", json={
+        "new_password": "weak",
+    })
+    assert resp.status_code == 400
+    assert "Password" in resp.json()["detail"]
+
+
+def test_reset_admin_target_blocked_for_non_bootstrap(sample_admin_profile):
+    _override_admin(sample_admin_profile)
+    target_admin = {
+        "id": "target-admin-id",
+        "email": "other@healthandgroup.com",
+        "role": "admin",
+    }
+
+    fake_admin = MagicMock()
+    fake_admin.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = target_admin
+
+    with patch("api.index.get_admin_client", return_value=fake_admin):
+        with patch("src.auth.settings") as s:
+            s.bootstrap_admin_email = "boss@healthandgroup.com"
+            client = TestClient(app)
+            resp = client.post(
+                "/api/admin/users/target-admin-id/reset-password",
+                json={"new_password": "Healthy123!"},
+            )
+
+    assert resp.status_code == 403
+    assert "bootstrap admin" in resp.json()["detail"].lower()
+
+
+def test_reset_admin_target_allowed_for_bootstrap(sample_admin_profile):
+    bootstrap = {**sample_admin_profile, "email": "boss@healthandgroup.com"}
+    _override_admin(bootstrap)
+    target_admin = {
+        "id": "target-admin-id",
+        "email": "other@healthandgroup.com",
+        "role": "admin",
+    }
+
+    fake_admin = MagicMock()
+    fake_admin.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = target_admin
+
+    with patch("api.index.get_admin_client", return_value=fake_admin):
+        with patch("src.auth.settings") as s:
+            s.bootstrap_admin_email = "boss@healthandgroup.com"
+            client = TestClient(app)
+            resp = client.post(
+                "/api/admin/users/target-admin-id/reset-password",
+                json={"new_password": "Healthy123!"},
+            )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_reset_sdr_target_allowed_for_any_admin(sample_admin_profile):
+    _override_admin(sample_admin_profile)
+    target_sdr = {
+        "id": "target-sdr-id",
+        "email": "rep@healthandgroup.com",
+        "role": "sdr",
+    }
+
+    fake_admin = MagicMock()
+    fake_admin.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = target_sdr
+
+    with patch("api.index.get_admin_client", return_value=fake_admin):
+        with patch("src.auth.settings") as s:
+            s.bootstrap_admin_email = "boss@healthandgroup.com"
+            client = TestClient(app)
+            resp = client.post(
+                "/api/admin/users/target-sdr-id/reset-password",
+                json={"new_password": "Healthy123!"},
+            )
+
+    assert resp.status_code == 200
