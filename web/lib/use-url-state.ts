@@ -8,6 +8,7 @@ export interface FilterState {
   search: string
   cat: string
   rating: number
+  minIcp: number
   tags: string[]
   enriched: "" | "yes" | "no"
   owner: string
@@ -19,6 +20,7 @@ export const EMPTY_FILTERS: FilterState = {
   search: "",
   cat: "",
   rating: 0,
+  minIcp: 0,
   tags: [],
   enriched: "",
   owner: "",
@@ -36,6 +38,7 @@ export function useUrlState(): [FilterState, (next: Partial<FilterState>) => voi
       search: params.get("search") ?? "",
       cat: params.get("cat") ?? "",
       rating: Number(params.get("rating") ?? 0),
+      minIcp: Number(params.get("minIcp") ?? 0),
       tags: (params.get("tags") ?? "").split(",").filter(Boolean),
       enriched: (params.get("enriched") as "" | "yes" | "no") ?? "",
       owner: params.get("owner") ?? "",
@@ -52,6 +55,7 @@ export function useUrlState(): [FilterState, (next: Partial<FilterState>) => voi
       if (merged.search) sp.set("search", merged.search)
       if (merged.cat) sp.set("cat", merged.cat)
       if (merged.rating) sp.set("rating", String(merged.rating))
+      if (merged.minIcp) sp.set("minIcp", String(merged.minIcp))
       if (merged.tags.length > 0) sp.set("tags", merged.tags.join(","))
       if (merged.enriched) sp.set("enriched", merged.enriched)
       if (merged.owner) sp.set("owner", merged.owner)

@@ -12,6 +12,8 @@ interface FilterBarProps {
   onCategoryChange: (cat: string) => void
   minRating: number
   onMinRatingChange: (r: number) => void
+  minIcp: number
+  onMinIcpChange: (v: number) => void
   tags: string[]
   onTagsChange: (tags: string[]) => void
   enriched: "" | "yes" | "no"
@@ -83,6 +85,19 @@ export default function FilterBar(p: FilterBarProps) {
             className="w-20 accent-teal-600"
           />
           <span className="text-xs font-medium w-6">{p.minRating || "Any"}</span>
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          Min ICP
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={p.minIcp}
+            onChange={(e) => p.onMinIcpChange(Number(e.target.value))}
+            className="w-24 accent-teal-600"
+          />
+          <span className="text-xs font-medium w-8">{p.minIcp || "Any"}</span>
         </label>
       </div>
     </div>

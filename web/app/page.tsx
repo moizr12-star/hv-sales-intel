@@ -179,6 +179,7 @@ function PageContent() {
       }
       if (filters.cat && p.category !== filters.cat) return false
       if (filters.rating && (p.rating ?? 0) < filters.rating) return false
+      if (filters.minIcp && (p.lead_score ?? -1) < filters.minIcp) return false
       if (filters.tags.length > 0) {
         const tags = p.tags ?? []
         if (!filters.tags.some((t) => tags.includes(t))) return false
@@ -241,6 +242,8 @@ function PageContent() {
             onCategoryChange={(c) => setFilters({ cat: c })}
             minRating={filters.rating}
             onMinRatingChange={(r) => setFilters({ rating: r })}
+            minIcp={filters.minIcp}
+            onMinIcpChange={(v) => setFilters({ minIcp: v })}
             tags={filters.tags}
             onTagsChange={(t) => setFilters({ tags: t })}
             enriched={filters.enriched}
