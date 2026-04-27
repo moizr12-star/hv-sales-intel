@@ -98,6 +98,10 @@ def _map_google_place(place: dict) -> Practice:
     loc = place.get("location", {})
     hours_periods = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
     name = place.get("displayName", {}).get("text", "Unknown")
+    types = place.get("types", [])
+    tags: list[str] = []
+    if not _is_healthcare(types, name):
+        tags.append("IRRELEVANT")
     return Practice(
         place_id=place.get("id") or place.get("name", "").rsplit("/", 1)[-1] or "unknown_place",
         name=name,
@@ -108,11 +112,46 @@ def _map_google_place(place: dict) -> Practice:
         website=place.get("websiteUri"),
         rating=place.get("rating"),
         review_count=place.get("userRatingCount", 0),
-        category=_classify_types(place.get("types", []), name=name),
+        category=_classify_types(types, name=name),
         lat=loc.get("latitude"),
         lng=loc.get("longitude"),
         opening_hours="; ".join(hours_periods) if hours_periods else None,
+        tags=tags,
     )
+
+
+HEALTHCARE_TYPES = frozenset({
+    "doctor", "dentist", "dental_clinic",
+    "physiotherapist", "chiropractor",
+    "hospital", "urgent_care_center", "emergency_room",
+    "psychiatrist", "psychologist", "mental_health", "mental_health_clinic",
+    "general_practitioner", "primary_care", "primary_care_physician",
+    "health", "medical_lab", "pharmacy",
+    "optometrist", "ophthalmologist", "dermatologist", "podiatrist",
+    "veterinary_care",
+})
+
+HEALTHCARE_NAME_KEYWORDS = (
+    "clinic", "hospital", "medical", "health", "dental", "doctor", "dr.",
+    "dentist", "orthodont", "psychiatr", "psycholog", "mental health",
+    "behavioral health", "primary care", "urgent care", "physiotherap",
+    "chiropract", "wellness", "rehab", "therapy", "podiatr", "dermatolog",
+    "optomet", "ophthalmolog", "veterinar", "pediatr", "obgyn", "obstetr",
+    "gynecolog", "cardiolog", "neurolog", "oncolog", "radiolog",
+)
+
+
+def _is_healthcare(types: list[str], name: str) -> bool:
+    """True if the place looks like a healthcare practice we'd want to target.
+
+    Source of truth is Google's `types`; falls back to keyword check on the
+    display name because solo practitioners often only get the generic 'doctor'
+    or 'point_of_interest' type.
+    """
+    if HEALTHCARE_TYPES & set(types or []):
+        return True
+    name_lower = (name or "").lower()
+    return any(k in name_lower for k in HEALTHCARE_NAME_KEYWORDS)
 
 
 def _extract_city(address: str) -> str | None:

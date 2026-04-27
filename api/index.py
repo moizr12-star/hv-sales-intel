@@ -635,17 +635,21 @@ async def search(body: SearchRequest, user: dict = Depends(get_current_user)):
             return {"practices": cached, "count": len(cached), "upserted": 0, "cached": True}
 
     practices = await search_places(body.query)
-    upserted = upsert_practices(practices, touched_by=user["id"])
+    relevant = [p for p in practices if "IRRELEVANT" not in p.tags]
+    irrelevant = [p for p in practices if "IRRELEVANT" in p.tags]
+    upserted = upsert_practices(relevant, touched_by=user["id"])
 
-    # Re-fetch from DB so the response carries joined attribution
-    # (last_touched_by_name, last_touched_at). Falls back to the in-memory
-    # Practice objects if the DB isn't configured.
+    # Re-fetch relevant practices from DB so the response carries joined
+    # attribution (last_touched_by_name). Irrelevant ones never enter the DB
+    # — we return their in-memory dump so the UI can show + grey them out.
     enriched: list[dict] = []
-    for p in practices:
+    for p in relevant:
         row = get_practice(p.place_id)
         enriched.append(row if row else p.model_dump())
+    for p in irrelevant:
+        enriched.append(p.model_dump())
 
-    save_search_cache(body.query, [p.place_id for p in practices])
+    save_search_cache(body.query, [p.place_id for p in relevant])
 
     return {
         "practices": enriched,

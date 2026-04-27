@@ -70,6 +70,7 @@ export default function PracticeCard({
 
   useEnrichmentPoll(practice, (next) => onEnrichmentUpdate?.(next))
   const isScored = practice.lead_score != null
+  const isIrrelevant = (practice.tags ?? []).includes("IRRELEVANT")
   const painPoints = parseJsonArray(practice.pain_points ?? null)
   const salesAngles = parseJsonArray(practice.sales_angles ?? null)
 
@@ -80,25 +81,41 @@ export default function PracticeCard({
 
   return (
     <div
-      onClick={handleCardClick}
+      onClick={isIrrelevant ? undefined : handleCardClick}
       className={cn(
-        "w-full text-left p-4 rounded-xl transition-all cursor-pointer",
-        "hover:bg-ivory-200/60",
-        isSelected ? "bg-teal-50 ring-1 ring-teal-600/30" : "bg-white/60"
+        "w-full text-left p-4 rounded-xl transition-all",
+        isIrrelevant
+          ? "bg-gray-100/40 opacity-60 cursor-default"
+          : "cursor-pointer hover:bg-ivory-200/60",
+        isSelected && !isIrrelevant ? "bg-teal-50 ring-1 ring-teal-600/30" : "bg-white/60"
       )}
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
-        <Link
-          href={`/practice/${practice.place_id}`}
-          onClick={(e) => e.stopPropagation()}
-          className="font-serif font-semibold text-gray-900 text-base leading-tight hover:text-teal-700 transition"
-        >
-          {practice.name}
-        </Link>
+        {isIrrelevant ? (
+          <span className="font-serif font-semibold text-gray-500 text-base leading-tight">
+            {practice.name}
+          </span>
+        ) : (
+          <Link
+            href={`/practice/${practice.place_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="font-serif font-semibold text-gray-900 text-base leading-tight hover:text-teal-700 transition"
+          >
+            {practice.name}
+          </Link>
+        )}
         <div className="flex items-center gap-1.5 shrink-0">
-          <StatusBadge status={practice.status} />
-          {isScored && <ScoreBadge score={practice.lead_score!} />}
+          {isIrrelevant ? (
+            <span className="text-[10px] font-semibold uppercase tracking-wide bg-gray-200 text-gray-600 rounded-full px-2 py-0.5">
+              Irrelevant
+            </span>
+          ) : (
+            <>
+              <StatusBadge status={practice.status} />
+              {isScored && <ScoreBadge score={practice.lead_score!} />}
+            </>
+          )}
         </div>
       </div>
       {practice.last_touched_by_name && practice.last_touched_at && (
@@ -156,6 +173,7 @@ export default function PracticeCard({
       )}
 
       {/* Action buttons */}
+      {!isIrrelevant && (
       <div className="flex gap-2 mt-3 flex-wrap">
         {practice.phone && (
           <CallButton
@@ -218,9 +236,10 @@ export default function PracticeCard({
           </button>
         )}
       </div>
+      )}
 
       {/* Inline analysis results — only when expanded */}
-      {isScored && isExpanded && (
+      {!isIrrelevant && isScored && isExpanded && (
         <div className="mt-3 pt-3 border-t border-gray-200/50 space-y-3">
           {practice.summary && (
             <p className="text-xs text-gray-600 leading-relaxed">{practice.summary}</p>

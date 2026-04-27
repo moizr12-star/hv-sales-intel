@@ -55,3 +55,6 @@ class Practice(BaseModel):
     owner_linkedin: str | None = None
     enrichment_status: str | None = None
     enriched_at: str | None = None
+
+    # Tags (multi-status — append-only in DB; transient on out-of-domain results)
+    tags: list[str] = []
