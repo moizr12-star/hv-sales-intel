@@ -25,21 +25,21 @@ def score_icp(practice: dict[str, Any]) -> dict:
             "label": "Geography",
             "score": 10,
             "max": 10,
-            "reason": "Florida — initial focus market",
+            "reason": "FL — initial focus market",
         })
     elif _is_us_state(state):
         breakdown.append({
             "label": "Geography",
             "score": 5,
             "max": 10,
-            "reason": f"US ({state}) — operating geography, not focus market",
+            "reason": f"{state} — US operating geography, not focus market",
         })
     else:
         breakdown.append({
             "label": "Geography",
             "score": 0,
             "max": 10,
-            "reason": "Outside US operating geography",
+            "reason": f"{state or 'Unknown'} — outside US operating geography",
         })
 
     # ---------- 2. Specialty fit (max 15) ----------
