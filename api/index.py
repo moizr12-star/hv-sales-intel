@@ -440,6 +440,7 @@ async def send_email_endpoint(
     if _should_auto_advance(current_status, "CONTACTED"):
         fields["status"] = "CONTACTED"
     update_practice_fields(place_id, fields, touched_by=user["id"])
+    add_tags(place_id, ["CONTACTED"])
 
     return row
 
@@ -842,6 +843,7 @@ async def call_log_endpoint(
     except LookupError:
         log.warning("[api.call_log.404] place_id=%s", place_id)
         raise HTTPException(404, "Practice not found")
+    add_tags(place_id, ["CONTACTED"])
     log.info(
         "[api.call_log.response] place_id=%s call_count=%s lead_id=%s warning=%s",
         place_id, practice.get("call_count"),
