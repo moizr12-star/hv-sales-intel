@@ -123,6 +123,23 @@ export default function PracticeCard({
           No owner found — try Re-enrich
         </p>
       )}
+      {practice.website_doctor_name && (
+        <div className="flex items-center gap-1.5 text-xs text-gray-600 mt-1">
+          <span className="font-medium">{practice.website_doctor_name}</span>
+          {practice.website_doctor_phone && (
+            <a
+              href={`tel:${practice.website_doctor_phone.replace(/\D/g, "")}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-teal-700 hover:underline"
+            >
+              {practice.website_doctor_phone}
+            </a>
+          )}
+          <span className="ml-1 text-[10px] uppercase tracking-wide bg-purple-100 text-purple-700 rounded px-1.5 py-0.5">
+            direct
+          </span>
+        </div>
+      )}
       <p className="text-xs text-gray-500 mt-0.5">{practice.address}</p>
 
       <div className="flex items-center gap-3 mt-2">
