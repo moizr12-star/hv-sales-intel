@@ -630,7 +630,7 @@ def list_practices(
     city: str | None = Query(None),
     category: str | None = Query(None),
     min_rating: float | None = Query(None),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(1000, ge=1, le=5000),
     user: dict = Depends(get_current_user),
 ):
     rows = query_practices(city=city, category=category, min_rating=min_rating, limit=limit)

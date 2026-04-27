@@ -57,7 +57,7 @@ function PageContent() {
     let cancelled = false
     async function hydrate() {
       try {
-        const dbRows = await listPractices({ limit: 200 })
+        const dbRows = await listPractices({ limit: 2000 })
         if (!cancelled && dbRows.length > 0) {
           setPractices(dbRows)
         }
@@ -101,7 +101,7 @@ function PageContent() {
     let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        const dbRows = await listPractices({ limit: 200 })
+        const dbRows = await listPractices({ limit: 2000 })
         if (!cancelled && dbRows.length > 0) {
           setPractices(dbRows)
         }
