@@ -47,7 +47,10 @@ async def analyze_practice(
         return _mock_analysis(name, category)
 
     # Collect data
-    website_text = await crawl_website(website or "")
+    crawl_result = await crawl_website(website or "")
+    website_text = crawl_result["text"]
+    website_doctor_name = crawl_result["doctor_name"]
+    website_doctor_phone = crawl_result["doctor_phone"]
     reviews = await fetch_reviews(
         place_id,
         name=name,
@@ -97,6 +100,8 @@ Category: {category or 'Unknown'}
         "call_script": None,
         "email_draft": None,
         "email_draft_updated_at": None,
+        "website_doctor_name": website_doctor_name,
+        "website_doctor_phone": website_doctor_phone,
     }
 
 
@@ -206,4 +211,6 @@ def _mock_analysis(name: str, category: str | None) -> dict:
         "call_script": None,
         "email_draft": None,
         "email_draft_updated_at": None,
+        "website_doctor_name": None,
+        "website_doctor_phone": None,
     }
