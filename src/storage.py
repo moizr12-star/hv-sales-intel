@@ -217,6 +217,8 @@ def add_tags(place_id: str, new_tags: list[str]) -> None:
         )
     except Exception:
         return
+    if result is None:
+        return
     existing = (result.data or {}).get("tags") or []
     merged = sorted(set(existing) | set(new_tags))
     if sorted(existing) == merged:

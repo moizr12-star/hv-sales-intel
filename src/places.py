@@ -83,9 +83,10 @@ def _mock_search(query: str) -> list[Practice]:
 def _map_google_place(place: dict) -> Practice:
     loc = place.get("location", {})
     hours_periods = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
+    name = place.get("displayName", {}).get("text", "Unknown")
     return Practice(
         place_id=place.get("id") or place.get("name", "").rsplit("/", 1)[-1] or "unknown_place",
-        name=place.get("displayName", {}).get("text", "Unknown"),
+        name=name,
         address=place.get("formattedAddress"),
         city=_extract_city(place.get("formattedAddress", "")),
         state=_extract_state(place.get("formattedAddress", "")),
@@ -93,7 +94,7 @@ def _map_google_place(place: dict) -> Practice:
         website=place.get("websiteUri"),
         rating=place.get("rating"),
         review_count=place.get("userRatingCount", 0),
-        category=_classify_types(place.get("types", [])),
+        category=_classify_types(place.get("types", []), name=name),
         lat=loc.get("latitude"),
         lng=loc.get("longitude"),
         opening_hours="; ".join(hours_periods) if hours_periods else None,
@@ -120,17 +121,47 @@ def _extract_state(address: str) -> str | None:
     return None
 
 
-def _classify_types(types: list[str]) -> str:
-    """Map Google Places types to our category taxonomy."""
+def _classify_types(types: list[str], name: str = "") -> str:
+    """Map Google Places types to our category taxonomy.
+
+    Google's types are unreliable for solo psychiatry/dental practices —
+    they often only get the generic 'doctor' type. We use the display name
+    as a fallback signal so e.g. "Dr Smith Psychiatrist" doesn't end up as
+    primary_care.
+    """
     type_set = set(types)
-    if type_set & {"dentist", "dental_clinic"}:
-        return "dental"
-    if type_set & {"physiotherapist", "chiropractor"}:
-        return "chiropractic"
-    if type_set & {"hospital", "urgent_care_center", "emergency_room"}:
-        return "urgent_care"
-    if type_set & {"psychiatrist", "psychologist", "mental_health"}:
+    name_lower = (name or "").lower()
+
+    # Mental health gets checked first because psychiatrists frequently
+    # carry only the 'doctor' type — name-based detection is the only
+    # reliable signal for them.
+    if (
+        type_set & {"psychiatrist", "psychologist", "mental_health"}
+        or any(
+            keyword in name_lower
+            for keyword in (
+                "psychiatrist", "psychiatric", "psychiatry",
+                "psychologist", "psychology", "mental health",
+                "behavioral health", "psychotherapy", "counseling",
+            )
+        )
+    ):
         return "mental_health"
+
+    if type_set & {"dentist", "dental_clinic"} or any(
+        k in name_lower for k in ("dentist", "dental", "orthodont")
+    ):
+        return "dental"
+
+    if type_set & {"physiotherapist", "chiropractor"} or any(
+        k in name_lower for k in ("chiropractor", "chiropractic", "physiotherap")
+    ):
+        return "chiropractic"
+
+    if type_set & {"hospital", "urgent_care_center", "emergency_room"} or "urgent care" in name_lower:
+        return "urgent_care"
+
     if type_set & {"doctor", "general_practitioner", "primary_care"}:
         return "primary_care"
+
     return "specialty"
