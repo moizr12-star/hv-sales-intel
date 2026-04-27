@@ -117,3 +117,32 @@ alter table practices
   add column if not exists owner_linkedin     text,
   add column if not exists enrichment_status  text,
   add column if not exists enriched_at        timestamptz;
+
+-- ======================= Leads workspace + personalization =======================
+
+-- Multi-tag visibility (orthogonal to status)
+alter table practices add column if not exists tags text[] not null default '{}';
+create index if not exists idx_practices_tags on practices using gin (tags);
+
+-- Assignment workflow
+alter table practices add column if not exists assigned_to uuid references profiles(id);
+alter table practices add column if not exists assigned_at timestamptz;
+alter table practices add column if not exists assigned_by uuid references profiles(id);
+create index if not exists idx_practices_assigned_to on practices (assigned_to);
+
+-- Website-extracted doctor info (separate from Google Places `phone`)
+alter table practices add column if not exists website_doctor_name text;
+alter table practices add column if not exists website_doctor_phone text;
+
+-- Backfill tags from existing state (idempotent — only writes empty tags)
+update practices set tags = (
+  select array_agg(distinct t) from unnest(array[
+    case when lead_score is not null then 'RESEARCHED' end,
+    case when call_script is not null then 'SCRIPT_READY' end,
+    case when enrichment_status = 'enriched' then 'ENRICHED' end,
+    case when call_count > 0 then 'CONTACTED' end,
+    case when status = 'MEETING SET' then 'MEETING_SET' end,
+    case when status = 'CLOSED WON' then 'CLOSED_WON' end,
+    case when status = 'CLOSED LOST' then 'CLOSED_LOST' end
+  ]) t where t is not null
+) where tags = '{}'::text[];
