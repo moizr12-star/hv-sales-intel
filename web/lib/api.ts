@@ -47,12 +47,14 @@ export async function listPractices(params?: {
   city?: string
   category?: string
   min_rating?: number
+  limit?: number
 }): Promise<Practice[]> {
   try {
     const qs = new URLSearchParams()
     if (params?.city) qs.set("city", params.city)
     if (params?.category) qs.set("category", params.category)
     if (params?.min_rating) qs.set("min_rating", String(params.min_rating))
+    if (params?.limit) qs.set("limit", String(params.limit))
     const data = await apiFetch<{ practices: Practice[] }>(`/api/practices?${qs}`)
     return data.practices
   } catch {

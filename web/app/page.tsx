@@ -9,7 +9,7 @@ import PracticeCard from "@/components/practice-card"
 import FilterBar from "@/components/filter-bar"
 import { searchPractices, analyzePractice, listPractices } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { useUrlState } from "@/lib/use-url-state"
+import { useUrlState, EMPTY_FILTERS } from "@/lib/use-url-state"
 import {
   readSnapshot,
   clearSnapshot,
@@ -49,21 +49,15 @@ function PageContent() {
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [scoreProgress, setScoreProgress] = useState<string | null>(null)
 
-  // Default SDR owner = self on first load if no owner in URL.
-  useEffect(() => {
-    if (!currentUser) return
-    if (currentUser.role !== "sdr") return
-    if (filters.owner) return
-    setFilters({ owner: currentUser.id })
-  }, [currentUser, filters.owner, setFilters])
-
-  // DB hydrate when no snapshot.
+  // DB hydrate when no snapshot. Always fetches the full DB on first
+  // login — no owner / search filters applied at fetch time so the user
+  // sees everything they have access to.
   useEffect(() => {
     if (hydratedFromDb) return
     let cancelled = false
     async function hydrate() {
       try {
-        const dbRows = await listPractices({})
+        const dbRows = await listPractices({ limit: 200 })
         if (!cancelled && dbRows.length > 0) {
           setPractices(dbRows)
         }
@@ -227,6 +221,7 @@ function PageContent() {
             <button
               onClick={() => {
                 clearSnapshot()
+                setFilters(EMPTY_FILTERS)
                 setHydratedFromDb(false)
               }}
               className="text-xs text-gray-500 hover:text-teal-700 underline"
