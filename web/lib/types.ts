@@ -18,9 +18,10 @@ export interface Practice {
   summary?: string | null
   pain_points?: string | null  // JSON string of string[]
   sales_angles?: string | null // JSON string of string[]
-  lead_score?: number | null
+  lead_score?: number | null   // ICP score (0-100), computed by icp_scorer
   urgency_score?: number | null
   hiring_signal_score?: number | null
+  icp_breakdown?: string | null  // JSON string of IcpBreakdownRow[]
 
   // Phase 3 (Call Playbook)
   call_script?: string | null // JSON string of Script
@@ -87,6 +88,23 @@ export interface ScriptSection {
   title: string
   icon: string
   content: string
+}
+
+export interface IcpBreakdownRow {
+  label: string
+  score: number
+  max: number
+  reason: string
+}
+
+export function parseIcpBreakdown(value: string | null | undefined): IcpBreakdownRow[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 export interface Script {

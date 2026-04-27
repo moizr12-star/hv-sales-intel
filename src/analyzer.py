@@ -4,6 +4,7 @@ import random
 from openai import AsyncOpenAI
 
 from src.crawler import crawl_website
+from src.icp_scorer import score_icp
 from src.reviews import fetch_reviews, format_reviews_for_prompt
 from src.settings import settings
 
@@ -41,10 +42,15 @@ async def analyze_practice(
     category: str | None,
     city: str | None = None,
     state: str | None = None,
+    rating: float | None = None,
+    review_count: int = 0,
 ) -> dict:
     """Analyze a practice. Uses OpenAI if API key is set, otherwise returns mock data."""
     if not settings.openai_api_key:
-        return _mock_analysis(name, category)
+        return _mock_analysis(
+            name=name, category=category, state=state,
+            rating=rating, review_count=review_count, website=website,
+        )
 
     # Collect data
     crawl_result = await crawl_website(website or "")
@@ -87,16 +93,33 @@ Category: {category or 'Unknown'}
         content = response.choices[0].message.content or "{}"
         result = json.loads(content)
     except Exception:
-        return _mock_analysis(name, category)
+        return _mock_analysis(
+            name=name, category=category, state=state,
+            rating=rating, review_count=review_count, website=website,
+        )
 
-    # Ensure all required fields exist with correct types
+    # Compute ICP score deterministically from practice attributes + AI
+    # urgency/hiring signals. We ignore any lead_score the model returned —
+    # the ICP scorer is the single source of truth for that number.
+    urgency_score = _clamp(result.get("urgency_score", 0))
+    hiring_signal_score = _clamp(result.get("hiring_signal_score", 0))
+    icp = score_icp({
+        "state": state,
+        "category": category,
+        "review_count": review_count,
+        "rating": rating,
+        "website": website,
+        "urgency_score": urgency_score,
+        "hiring_signal_score": hiring_signal_score,
+    })
     return {
         "summary": result.get("summary", ""),
         "pain_points": json.dumps(result.get("pain_points", [])),
         "sales_angles": json.dumps(result.get("sales_angles", [])),
-        "lead_score": _clamp(result.get("lead_score", 0)),
-        "urgency_score": _clamp(result.get("urgency_score", 0)),
-        "hiring_signal_score": _clamp(result.get("hiring_signal_score", 0)),
+        "lead_score": icp["total"],
+        "urgency_score": urgency_score,
+        "hiring_signal_score": hiring_signal_score,
+        "icp_breakdown": json.dumps(icp["breakdown"]),
         "call_script": None,
         "email_draft": None,
         "email_draft_updated_at": None,
@@ -186,28 +209,43 @@ MOCK_SALES_ANGLES = {
 }
 
 
-def _mock_analysis(name: str, category: str | None) -> dict:
-    """Return realistic mock analysis data."""
+def _mock_analysis(
+    name: str,
+    category: str | None,
+    state: str | None = None,
+    rating: float | None = None,
+    review_count: int = 0,
+    website: str | None = None,
+) -> dict:
+    """Return realistic mock analysis data with ICP-derived lead_score."""
     cat = category or "primary_care"
     pain_points = MOCK_PAIN_POINTS.get(cat, MOCK_PAIN_POINTS["primary_care"])
     sales_angles = MOCK_SALES_ANGLES.get(cat, MOCK_SALES_ANGLES["primary_care"])
 
-    # Pick 2-3 random items from each list
     selected_pains = random.sample(pain_points, min(3, len(pain_points)))
     selected_angles = random.sample(sales_angles, min(2, len(sales_angles)))
 
     hiring = random.randint(25, 95)
     urgency = random.randint(20, 80)
-    lead = int(hiring * 0.5 + urgency * 0.3 + random.randint(5, 20) * 0.2)
-    lead = max(0, min(100, lead))
+
+    icp = score_icp({
+        "state": state,
+        "category": category,
+        "review_count": review_count,
+        "rating": rating,
+        "website": website,
+        "urgency_score": urgency,
+        "hiring_signal_score": hiring,
+    })
 
     return {
         "summary": f"{name} shows signs of staffing challenges typical of {cat.replace('_', ' ')} practices. Review analysis and website signals suggest opportunities for Health & Virtuals staffing services.",
         "pain_points": json.dumps(selected_pains),
         "sales_angles": json.dumps(selected_angles),
-        "lead_score": lead,
+        "lead_score": icp["total"],
         "urgency_score": urgency,
         "hiring_signal_score": hiring,
+        "icp_breakdown": json.dumps(icp["breakdown"]),
         "call_script": None,
         "email_draft": None,
         "email_draft_updated_at": None,

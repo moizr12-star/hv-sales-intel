@@ -714,14 +714,22 @@ async def analyze(
         category = current_record.get("category")
         city = current_record.get("city")
         state = current_record.get("state")
+        rating = current_record.get("rating")
+        review_count = current_record.get("review_count") or 0
     else:
         name = place_id
         website = None
         category = None
         city = None
         state = None
+        rating = None
+        review_count = 0
 
-    analysis = await analyze_practice(place_id, name, website, category, city=city, state=state)
+    analysis = await analyze_practice(
+        place_id, name, website, category,
+        city=city, state=state,
+        rating=rating, review_count=review_count,
+    )
 
     if current_record:
         current_status = current_record.get("status", "NEW")

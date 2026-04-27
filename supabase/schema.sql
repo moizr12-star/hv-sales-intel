@@ -134,6 +134,9 @@ create index if not exists idx_practices_assigned_to on practices (assigned_to);
 alter table practices add column if not exists website_doctor_name text;
 alter table practices add column if not exists website_doctor_phone text;
 
+-- ICP score breakdown (per-dimension reasoning) — populated by the analyzer
+alter table practices add column if not exists icp_breakdown jsonb;
+
 -- Search query cache (avoid re-billing Google for repeated queries)
 create table if not exists searches (
   id bigserial primary key,
