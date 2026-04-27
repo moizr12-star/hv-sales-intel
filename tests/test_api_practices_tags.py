@@ -52,6 +52,44 @@ def test_analyze_appends_researched_tag(sample_admin_profile):
     add_tags_mock.assert_any_call("p1", ["RESEARCHED"])
 
 
+def test_analyze_persists_website_doctor_fields(sample_admin_profile):
+    _override_user(sample_admin_profile)
+    existing = {"place_id": "p1", "name": "X", "status": "NEW", "tags": []}
+    analysis = {
+        "summary": "s",
+        "pain_points": "[]",
+        "sales_angles": "[]",
+        "lead_score": 50,
+        "urgency_score": 50,
+        "hiring_signal_score": 50,
+        "call_script": None,
+        "email_draft": None,
+        "email_draft_updated_at": None,
+        "website_doctor_name": "Dr. Sarah Smith",
+        "website_doctor_phone": "(555) 123-4567",
+    }
+
+    async def _aresult(*args, **kwargs):
+        return analysis
+
+    captured: dict = {}
+
+    def _fake_update(place_id, fields, touched_by=None):
+        captured.update(fields)
+        return {**existing, **fields}
+
+    with patch("api.index.get_practice", return_value=existing), \
+         patch("api.index.analyze_practice", new=_aresult), \
+         patch("api.index.update_practice_analysis", side_effect=_fake_update), \
+         patch("api.index.add_tags"):
+        client = TestClient(app)
+        resp = client.post("/api/practices/p1/analyze", json={"force": True})
+
+    assert resp.status_code == 200
+    assert captured["website_doctor_name"] == "Dr. Sarah Smith"
+    assert captured["website_doctor_phone"] == "(555) 123-4567"
+
+
 # ---------- script gen → SCRIPT_READY ----------
 
 
