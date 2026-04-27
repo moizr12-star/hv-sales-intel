@@ -489,6 +489,46 @@ def me(user: dict = Depends(get_current_user)):
     return {**user, "is_bootstrap_admin": is_bootstrap_admin(user)}
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _anon_supabase_client():
+    """Anon (non-admin) Supabase client used to verify a user's current password."""
+    from supabase import create_client
+    return create_client(app_settings.supabase_url, app_settings.supabase_key)
+
+
+@app.post("/api/me/password")
+def change_my_password(
+    body: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+):
+    from src.validators import validate_password
+
+    try:
+        validate_password(body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    anon = _anon_supabase_client()
+    try:
+        anon.auth.sign_in_with_password({
+            "email": user["email"],
+            "password": body.current_password,
+        })
+    except Exception:
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+
+    admin = get_admin_client()
+    try:
+        admin.auth.admin.update_user_by_id(user["id"], {"password": body.new_password})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update password: {e}")
+    return {"ok": True}
+
+
 @app.get("/api/practices")
 def list_practices(
     city: str | None = Query(None),
