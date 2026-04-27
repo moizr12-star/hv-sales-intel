@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import dynamic from "next/dynamic"
 import type { Practice } from "@/lib/types"
 import { mockPractices } from "@/lib/mock-data"
@@ -8,14 +8,44 @@ import TopBar from "@/components/top-bar"
 import PracticeCard from "@/components/practice-card"
 import FilterBar from "@/components/filter-bar"
 import { searchPractices, analyzePractice, listPractices } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
+import { useUrlState } from "@/lib/use-url-state"
+import {
+  readSnapshot,
+  clearSnapshot,
+  useSessionSnapshot,
+} from "@/lib/use-session-snapshot"
 
 const MapView = dynamic(() => import("@/components/map-view"), { ssr: false })
 
 export default function Page() {
-  const [practices, setPractices] = useState<Practice[]>(mockPractices)
+  const { user: currentUser } = useAuth()
+  const [filters, setFilters] = useUrlState()
+  const sidebarRef = useRef<HTMLDivElement>(null)
 
-  // Hydrate from DB on mount so analysis + attribution persist across refreshes.
+  // Hydrate practices: snapshot first (synchronous), then DB.
+  const [practices, setPractices] = useState<Practice[]>(() => {
+    const snap = readSnapshot()
+    return snap?.practices ?? mockPractices
+  })
+  const [hydratedFromDb, setHydratedFromDb] = useState<boolean>(() => !!readSnapshot())
+
+  const [isLoading, setIsLoading] = useState(false)
+  const [isRescanning, setIsRescanning] = useState(false)
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
+  const [scoreProgress, setScoreProgress] = useState<string | null>(null)
+
+  // Default SDR owner = self on first load if no owner in URL.
   useEffect(() => {
+    if (!currentUser) return
+    if (currentUser.role !== "sdr") return
+    if (filters.owner) return
+    setFilters({ owner: currentUser.id })
+  }, [currentUser, filters.owner, setFilters])
+
+  // DB hydrate when no snapshot.
+  useEffect(() => {
+    if (hydratedFromDb) return
     let cancelled = false
     async function hydrate() {
       try {
@@ -24,50 +54,53 @@ export default function Page() {
           setPractices(dbRows)
         }
       } catch {
-        // Keep mock fallback
+        /* keep mock fallback */
+      } finally {
+        if (!cancelled) setHydratedFromDb(true)
       }
     }
     hydrate()
     return () => {
       cancelled = true
     }
-  }, [])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isRescanning, setIsRescanning] = useState(false)
-  const [cityLabel, setCityLabel] = useState("")
-  const [lastQuery, setLastQuery] = useState("")
-  const [category, setCategory] = useState("")
-  const [minRating, setMinRating] = useState(0)
-  const [statusFilter, setStatusFilter] = useState("ACTIVE")
-  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
-  const [scoreProgress, setScoreProgress] = useState<string | null>(null)
+  }, [hydratedFromDb])
 
-  const handleSearch = useCallback(async (query: string) => {
-    setIsLoading(true)
-    try {
-      const results = await searchPractices(query)
-      setPractices(results)
-      setCityLabel(query)
-      setLastQuery(query)
-      setSelectedId(null)
-    } finally {
-      setIsLoading(false)
+  // Restore scroll once on mount if snapshot present.
+  useEffect(() => {
+    const snap = readSnapshot()
+    if (snap?.scrollTop && sidebarRef.current) {
+      sidebarRef.current.scrollTop = snap.scrollTop
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useSessionSnapshot(practices, filters, sidebarRef)
+
+  const handleSearch = useCallback(
+    async (query: string) => {
+      setIsLoading(true)
+      try {
+        const results = await searchPractices(query)
+        setPractices(results)
+        setFilters({ q: query, sel: "" })
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [setFilters],
+  )
 
   const handleRescan = useCallback(async () => {
-    if (!lastQuery.trim()) return
+    if (!filters.q.trim()) return
     setIsRescanning(true)
     try {
-      const results = await searchPractices(lastQuery)
+      const results = await searchPractices(filters.q)
       setPractices(results)
-      setCityLabel(lastQuery)
-      setSelectedId(null)
+      setFilters({ sel: "" })
     } finally {
       setIsRescanning(false)
     }
-  }, [lastQuery])
+  }, [filters.q, setFilters])
 
   const handleAnalyze = useCallback(async (placeId: string, refresh = false) => {
     setAnalyzingIds((prev) => new Set(prev).add(placeId))
@@ -77,7 +110,7 @@ export default function Page() {
         rescan: refresh,
       })
       setPractices((prev) =>
-        prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
+        prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p)),
       )
     } finally {
       setAnalyzingIds((prev) => {
@@ -91,7 +124,6 @@ export default function Page() {
   const handleScoreAll = useCallback(async () => {
     const unscored = practices.filter((p) => p.lead_score == null)
     if (unscored.length === 0) return
-
     for (let i = 0; i < unscored.length; i++) {
       setScoreProgress(`Scoring ${i + 1}/${unscored.length}...`)
       const placeId = unscored[i].place_id
@@ -102,7 +134,7 @@ export default function Page() {
           rescan: false,
         })
         setPractices((prev) =>
-          prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p))
+          prev.map((p) => (p.place_id === placeId ? { ...p, ...updated } : p)),
         )
       } finally {
         setAnalyzingIds((prev) => {
@@ -116,11 +148,34 @@ export default function Page() {
   }, [practices])
 
   const filtered = useMemo(() => {
+    const needle = filters.search.toLowerCase()
     const list = practices.filter((p) => {
-      if (category && p.category !== category) return false
-      if (minRating && (p.rating ?? 0) < minRating) return false
-      if (statusFilter === "ACTIVE" && p.status === "CLOSED LOST") return false
-      if (statusFilter && statusFilter !== "ACTIVE" && p.status !== statusFilter) return false
+      if (needle) {
+        const hay = [
+          p.name,
+          p.address,
+          p.city,
+          p.owner_name,
+          p.website_doctor_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
+      if (filters.cat && p.category !== filters.cat) return false
+      if (filters.rating && (p.rating ?? 0) < filters.rating) return false
+      if (filters.tags.length > 0) {
+        const tags = p.tags ?? []
+        if (!filters.tags.some((t) => tags.includes(t))) return false
+      }
+      if (filters.enriched === "yes" && p.enrichment_status !== "enriched") return false
+      if (filters.enriched === "no" && p.enrichment_status === "enriched") return false
+      if (filters.owner) {
+        if (p.assigned_to !== filters.owner && p.last_touched_by !== filters.owner) {
+          return false
+        }
+      }
       return true
     })
     return list.sort((a, b) => {
@@ -128,7 +183,7 @@ export default function Page() {
       const bScore = b.lead_score ?? -1
       return bScore - aScore
     })
-  }, [practices, category, minRating, statusFilter])
+  }, [practices, filters])
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -138,42 +193,63 @@ export default function Page() {
         onScoreAll={handleScoreAll}
         scoreProgress={scoreProgress}
         onRescan={handleRescan}
-        canRescan={!!lastQuery.trim()}
+        canRescan={!!filters.q.trim()}
         isRescanning={isRescanning}
-        currentQuery={lastQuery}
+        currentQuery={filters.q}
       />
 
       <main className="relative w-full h-full pt-14">
-        {/* Sidebar */}
-        <div className="absolute top-2 left-4 bottom-4 w-[390px] z-10 glass-panel rounded-2xl flex flex-col overflow-hidden">
-          <div className="px-5 pt-5 pb-3 border-b border-gray-200/50">
-            <h2 className="font-serif text-lg font-semibold text-gray-900">
-              {cityLabel || "All practices"}
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {filtered.length} practice{filtered.length !== 1 ? "s" : ""}
-            </p>
+        <div className="absolute top-2 left-4 bottom-4 w-[420px] z-10 glass-panel rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-5 pt-5 pb-3 border-b border-gray-200/50 flex items-start justify-between gap-2">
+            <div>
+              <h2 className="font-serif text-lg font-semibold text-gray-900">
+                {filters.q || "All practices"}
+              </h2>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {filtered.length} practice{filtered.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                clearSnapshot()
+                setHydratedFromDb(false)
+              }}
+              className="text-xs text-gray-500 hover:text-teal-700 underline"
+              title="Refresh from database"
+            >
+              Refresh
+            </button>
           </div>
           <FilterBar
-            category={category}
-            onCategoryChange={setCategory}
-            minRating={minRating}
-            onMinRatingChange={setMinRating}
-            status={statusFilter}
-            onStatusChange={setStatusFilter}
+            search={filters.search}
+            onSearchChange={(s) => setFilters({ search: s })}
+            category={filters.cat}
+            onCategoryChange={(c) => setFilters({ cat: c })}
+            minRating={filters.rating}
+            onMinRatingChange={(r) => setFilters({ rating: r })}
+            tags={filters.tags}
+            onTagsChange={(t) => setFilters({ tags: t })}
+            enriched={filters.enriched}
+            onEnrichedChange={(v) => setFilters({ enriched: v })}
+            owner={filters.owner}
+            onOwnerChange={(o) => setFilters({ owner: o })}
+            currentUser={currentUser}
           />
-          <div className="flex-1 overflow-y-auto sidebar-scroll p-3 space-y-2">
+          <div
+            ref={sidebarRef}
+            className="flex-1 overflow-y-auto sidebar-scroll p-3 space-y-2"
+          >
             {filtered.length === 0 ? (
               <p className="text-center text-gray-400 py-10 text-sm">
-                No practices found. Try a different search.
+                No practices match these filters.
               </p>
             ) : (
               filtered.map((p) => (
                 <PracticeCard
                   key={p.place_id}
                   practice={p}
-                  isSelected={selectedId === p.place_id}
-                  onSelect={setSelectedId}
+                  isSelected={filters.sel === p.place_id}
+                  onSelect={(id) => setFilters({ sel: id ?? "" })}
                   onAnalyze={handleAnalyze}
                   isAnalyzing={analyzingIds.has(p.place_id)}
                   onCallLogged={(response) => {
@@ -181,8 +257,8 @@ export default function Page() {
                       prev.map((x) =>
                         x.place_id === response.practice.place_id
                           ? { ...x, ...response.practice }
-                          : x
-                      )
+                          : x,
+                      ),
                     )
                     if (response.sf_warning) {
                       console.warn("[SF]", response.sf_warning)
@@ -201,11 +277,10 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Map */}
         <MapView
           practices={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
+          selectedId={filters.sel || null}
+          onSelect={(id) => setFilters({ sel: id ?? "" })}
         />
       </main>
     </div>
