@@ -33,6 +33,7 @@ from src.places import get_place, search_places
 from src.scriptgen import generate_script
 from src.settings import settings as app_settings
 from src.storage import (
+    add_tags,
     get_practice,
     insert_email_message,
     list_email_messages,
@@ -692,6 +693,7 @@ async def analyze(
             analysis["status"] = "RESEARCHED"
 
     updated = update_practice_analysis(place_id, analysis, touched_by=user["id"])
+    add_tags(place_id, ["RESEARCHED"])
     if updated:
         return updated
 
