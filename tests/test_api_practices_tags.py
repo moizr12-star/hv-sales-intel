@@ -146,6 +146,52 @@ def test_call_log_appends_contacted_tag(sample_admin_profile):
     add_tags_mock.assert_any_call("p1", ["CONTACTED"])
 
 
+# ---------- email poll → REPLIED ----------
+
+
+def test_email_poll_appends_replied_tag_on_inbound(sample_admin_profile):
+    _override_user(sample_admin_profile)
+    practice = {"place_id": "p1", "id": 1, "tags": [], "email": "x@y.com", "status": "CONTACTED"}
+
+    async def _apoll(*args, **kwargs):
+        return [{"message_id": "m1", "subject": "Re: Hi", "body": "thanks", "in_reply_to": "out1"}]
+
+    with patch("api.index._email_configured", return_value=True), \
+         patch("api.index.get_practice", return_value=practice), \
+         patch("api.index.list_outbound_message_ids", return_value=["out1"]), \
+         patch("api.index.list_email_messages", return_value=[]), \
+         patch("api.index.poll_replies", new=_apoll), \
+         patch("api.index.insert_email_message", return_value={"id": 99, "direction": "in"}), \
+         patch("api.index.update_practice_fields"), \
+         patch("api.index.add_tags") as add_tags_mock:
+        client = TestClient(app)
+        resp = client.post("/api/practices/p1/email/poll")
+
+    assert resp.status_code == 200
+    add_tags_mock.assert_any_call("p1", ["REPLIED"])
+
+
+# ---------- PATCH practice → status-change tags ----------
+
+
+@pytest.mark.parametrize("status,expected_tag", [
+    ("MEETING SET", "MEETING_SET"),
+    ("CLOSED WON", "CLOSED_WON"),
+    ("CLOSED LOST", "CLOSED_LOST"),
+])
+def test_patch_practice_tags_on_closing_status(sample_admin_profile, status, expected_tag):
+    _override_user(sample_admin_profile)
+    existing = {"place_id": "p1", "id": 1, "name": "X", "tags": [], "status": "CONTACTED"}
+
+    with patch("api.index.update_practice_fields", return_value={**existing, "status": status}), \
+         patch("api.index.add_tags") as add_tags_mock:
+        client = TestClient(app)
+        resp = client.patch("/api/practices/p1", json={"status": status})
+
+    assert resp.status_code == 200
+    add_tags_mock.assert_any_call("p1", [expected_tag])
+
+
 def test_email_send_appends_contacted_tag(sample_admin_profile):
     _override_user(sample_admin_profile)
     existing = {

@@ -510,6 +510,7 @@ async def poll_email_replies_endpoint(
         if _should_auto_advance(current_status, "FOLLOW UP"):
             fields["status"] = "FOLLOW UP"
         update_practice_fields(place_id, fields, touched_by=user["id"])
+        add_tags(place_id, ["REPLIED"])
 
     return {
         "new_messages": new_rows,
@@ -542,6 +543,7 @@ def mark_email_replied_endpoint(
     if _should_auto_advance(current_status, "FOLLOW UP"):
         fields["status"] = "FOLLOW UP"
     update_practice_fields(place_id, fields, touched_by=user["id"])
+    add_tags(place_id, ["REPLIED"])
 
     return row
 
@@ -794,6 +796,14 @@ async def patch_practice(
     updated = update_practice_fields(place_id, fields, touched_by=user["id"])
     if not updated:
         raise HTTPException(status_code=404, detail="Practice not found")
+
+    STATUS_TAG_MAP = {
+        "MEETING SET": "MEETING_SET",
+        "CLOSED WON": "CLOSED_WON",
+        "CLOSED LOST": "CLOSED_LOST",
+    }
+    if body.status and body.status in STATUS_TAG_MAP:
+        add_tags(place_id, [STATUS_TAG_MAP[body.status]])
 
     # If notes changed AND practice has a Salesforce Lead, push the notes
     # into the Lead's Call_Notes__c field (overwriting). Fail-soft: log
