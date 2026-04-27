@@ -1,5 +1,12 @@
 # Clay Owner Enrichment Implementation Plan
 
+> **Status:** Backend implemented (Tasks 1–13). Task 14 (E2E smoke test) in progress against a real Clay workspace — see [spec § Clay setup gotchas](../../specs/2026-04-24-clay-enrichment-design.md#clay-setup-gotchas-2026-04-27) for issues found during setup.
+
+> **2026-04-27 amendments:**
+> - **Task 4 (`src/clay.py`)**: `CLAY_TABLE_API_KEY` was made optional. `_is_configured()` only checks `CLAY_TABLE_WEBHOOK_URL`. The auth header is `x-clay-webhook-auth` (not `Authorization: Bearer`) and is only added when the API key is set. Test renamed from `test_trigger_enrichment_skips_when_not_configured` to `test_trigger_enrichment_skips_when_webhook_url_missing`, and a new test `test_trigger_enrichment_omits_auth_header_when_no_api_key` was added.
+> - **Mock data**: 2 of 14 mock practices populated with realistic owner data so the UI is demo-able without Clay credentials.
+> - **Task 14 (smoke test)**: Clay's HTTP API action requires the body to reference only columns that always have non-null values, OR the action is gated and never fires. Pragmatic v1 setup: include `place_id`, `owner_name` (from `Custom Waterfall` after retyping it to Text), and `owner_email` (from Findymail) — skip `owner_phone` and `owner_linkedin` until Clay-side gating settings are tuned. Backend handles missing fields fine.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let reps click "Enrich owner" on a practice card to fire a Clay table run, then auto-update the card with owner name / title / email / phone / LinkedIn when Clay's webhook returns.

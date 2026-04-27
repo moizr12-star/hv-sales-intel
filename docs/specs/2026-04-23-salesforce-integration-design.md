@@ -1,67 +1,84 @@
 # Salesforce Integration — Design Spec
 
-**Date:** 2026-04-23
-**Status:** Draft — awaiting review
+**Date:** 2026-04-23 (revised 2026-04-27 after Apex REST switch)
+**Status:** Implemented and shipped
+
+> **2026-04-27 revision summary.** The original design proposed standard Salesforce REST (`sobjects/Lead`) authenticated via username-password OAuth. Health & Group's Salesforce admin team published a custom **Apex REST endpoint** instead (a `lead/webhook/` path on `*.my.salesforce-sites.com`), authenticated by a static `x-api-key` header. We pivoted the implementation to that endpoint. The user-facing behavior, data model, and sequence are unchanged; the auth module (`sf_auth.py`) is gone, the request shapes changed, and call notes are now stored verbatim instead of GPT-polished.
 
 ## Goal
 
-When a rep clicks **Call** on a practice for the first time, create a Salesforce Lead. On every subsequent call, update the same Lead — pushing the full call history and an incrementing call count. Before anything is written to Salesforce, the rep's raw note is polished by GPT into a professional CRM entry. The Salesforce Lead ID and owner name are stored on the practice so the team can see who owns the lead in SF without leaving the app.
+When a rep clicks **Call** on a practice for the first time, create a Salesforce Lead through Health & Group's Apex REST endpoint. On every subsequent call, update the same Lead — pushing the full call history and an incrementing call count. The Salesforce Lead ID is stored on the practice so the team can see which lead is which without leaving the app. The rep's free-text notes (in the Notes tab on Call Prep) are also pushed to the same Lead's `Call_Notes__c` field, separately from the per-call timestamped log.
 
 ## Scope
 
 ### In scope
-- Salesforce REST auth via **Username-Password OAuth** (Connected App + SF credentials in `.env`).
-- Single standard **Lead** object with two custom fields (`Call_Count__c`, `Call_Notes__c`).
+- **Apex REST** auth: POST/PUT to a single Apex endpoint with `x-api-key` header.
+- One Salesforce **Lead** record per practice, identified by the `salesforce_lead_id` we get back from the create response.
+- Two custom fields on Lead, both populated by us: `Call_Count__c` (numeric, sent as string), `Call_Notes__c` (long text).
+- One mandatory custom picklist field: `Lead_Type__c` (always `"Outbound"`).
 - Modal on Call click: rep types a note, clicks **Save & Call**, single action does note-log + SF sync + RingCentral dialer.
-- GPT polishing of rep's raw note (gpt-4o-mini, silent auto-save, fallback on OpenAI error).
+- Notes panel (Call Prep): typing in the textarea + saving pushes the text to `Call_Notes__c` on the existing SF Lead (overwrites — full text is the source of truth).
 - New Supabase columns for SF linkage + call tracking.
-- New endpoint `POST /api/practices/{place_id}/call/log`.
+- Endpoint `POST /api/practices/{place_id}/call/log` for the call modal.
+- `PATCH /api/practices/{place_id}` (existing endpoint) extended: when `notes` changes AND practice has a `salesforce_lead_id`, push notes into SF.
 - Fail-soft SF sync: local save always succeeds; SF failures surface as a non-blocking warning.
 - Mock mode: feature works without SF credentials (local log only, no SF calls).
+- Owner contact fields (`OwnerName`, `OwnerPhone`, `OwnerEmail`) are sent on create using whatever the practice has — typically populated by the Clay enrichment step that runs before the first call.
 
 ### Out of scope (future)
-- Salesforce **Task** objects per call (v2; current design uses a single appending text field).
-- JWT Bearer auth for SF (production-grade; current design uses username-password which is simpler but being deprecated by SF long-term).
-- Two-way sync (SF → app). Owner refreshes on each push; status/stage changes in SF don't flow back.
-- Custom score fields on the Lead (`Lead_Score__c` etc.) — v2 if requested.
-- Account/Contact modeling instead of Lead.
-- Audit trail of raw vs polished notes.
-- Bulk sync / backfill of existing practices.
+- Reading data back from Salesforce (e.g., showing the SF Owner's name in our UI). The Apex endpoint returns only `{success, message, leadId}`.
+- Two-way sync: SF → app. Status, owner, and stage changes inside SF don't flow back.
+- Per-call audit trail (we keep only the appended `Call_Notes__c` text).
+- Standard SF REST `sobjects/Lead/` (replaced by Apex REST).
+- OAuth Bearer token rotation (Apex REST takes a static API key in `x-api-key`).
+- Editing Lead Status from our app after create (we set it on first create only).
+- Retry queue for failed SF calls.
 
 ## Architecture
 
 ```
-[Rep clicks Call]
+[Rep clicks Call on a practice card]
        │
        ▼
-[CallModal textarea + Save&Call]
+[CallLogModal (textarea + Save&Call)]
        │  POST /api/practices/{id}/call/log {note}
        ▼
-[Backend: call_log.append_call_note]
-       │  1. polish via GPT (skip if empty)
+[call_log.append_call_note]
+       │  1. polished = raw note, verbatim (no GPT — see decision log)
        │  2. append "[ts UTC] {rep}: {polished}" to practices.call_notes
        │  3. increment practices.call_count
+       │  4. salesforce.sync_practice(practice, line)
        ▼
-[Backend: salesforce.sync_practice]
-       │  if sf_lead_id null → create_lead + get_owner
-       │  else              → update_lead (Call_Count__c, Call_Notes__c)
-       │  stamp salesforce_synced_at
-       │  fail-soft: return {practice, sf_warning?}
+[salesforce.sync_practice]
+       │  if sf_lead_id null → create_lead   (POST → leadId returned)
+       │  else              → update_lead   (PUT → success returned)
+       │  fail-soft: any exception bubbles up to call_log → warning
        ▼
 [Frontend: close modal, openRingCentralCall(practice.phone)]
+
+
+[Rep edits Lead Notes textarea on Call Prep]
+       │
+       ▼
+[NotesPanel onBlur / Save]
+       │  PATCH /api/practices/{id} {notes}
+       ▼
+[patch_practice]
+       │  1. update practices.notes locally (always)
+       │  2. if practice.salesforce_lead_id → salesforce.update_lead(id, call_count, notes)
+       │     (pushes the full notes text into Call_Notes__c, overwriting)
 ```
 
-Three isolated backend modules, one endpoint, one modal component. Matches the pattern already established by email outreach and analysis.
+Two backend modules, two FastAPI endpoints (`/call/log` new, `/{id}` PATCH extended), one modal + Notes panel on the frontend. The Clay enrichment step runs **before** the first call and populates `owner_*` fields, which are then forwarded to SF on Lead create.
 
-## Data model changes
+## Data model
 
 ### Supabase: `practices` table
 
 ```sql
 alter table practices
   add column salesforce_lead_id     text,
-  add column salesforce_owner_id    text,
-  add column salesforce_owner_name  text,
+  add column salesforce_owner_name  text,    -- echo of OwnerName we sent on create
   add column salesforce_synced_at   timestamptz,
   add column call_count             integer not null default 0,
   add column call_notes             text;
@@ -69,373 +86,301 @@ alter table practices
 create index idx_practices_sf_lead_id on practices(salesforce_lead_id);
 ```
 
-### Salesforce: custom Lead fields (manual setup)
+Note vs. original spec: `salesforce_owner_id` was specified but never stored — the Apex endpoint doesn't return it. The model still has the field (kept for backwards compatibility) but the call-log path doesn't write to it.
 
-| API name          | Type                          | Purpose                            |
-| ----------------- | ----------------------------- | ---------------------------------- |
-| `Call_Count__c`   | Number(8, 0), default 0       | Running count of calls from the app |
-| `Call_Notes__c`   | Long Text Area (32,768 chars) | Full appended call log (newest at bottom) |
+### Salesforce custom fields (Health & Group's SF admin owns)
 
-No triggers, workflows, or validation rules needed. Field-level security must allow read/write for the integration user.
+| API name           | Type                          | Purpose                                                |
+| ------------------ | ----------------------------- | ------------------------------------------------------ |
+| `Call_Count__c`    | Number / numeric (sent as string) | Running count of calls from this app.              |
+| `Call_Notes__c`    | Long Text Area (32,768)       | Full appended call log; also overwritten by Notes tab. |
+| `Lead_Type__c`     | Picklist                       | Required. We always send `"Outbound"`.                 |
 
-### Append format
+Standard fields populated on create: `Company`, `OwnerName`, `OwnerPhone`, `OwnerEmail`, `Email`, `Website`, `Street`, `City`, `State`, `PostalCode` (empty), `Country` (`"USA"`), `Industry` (`"Healthcare"`), `LeadSource` (`"HV Sales Intel"`), `Status` (`"Working - Contacted"`), `Description` (built from analysis scores).
+
+### Append format for `Call_Notes__c` (per-call log)
 
 ```
-[2026-04-23 10:22 UTC] Sarah Khan: Left voicemail. Contact seemed preoccupied; planning to retry Thursday around 2pm.
-[2026-04-24 14:05 UTC] Sarah Khan: Spoke with office manager. Interested in a demo next week.
+[2026-04-23 10:22 UTC] Sarah Khan: left vm, gonna retry thu around 2
+[2026-04-24 14:05 UTC] Sarah Khan: spoke with office manager. interested in demo.
 ```
 
 - Timestamp: UTC, format `YYYY-MM-DD HH:MM UTC`.
-- Rep name: from `profiles.full_name` (already stamped on `last_touched_by_name`).
-- Polished note: GPT output, or raw note + ` (unpolished)` on GPT failure, or `(call logged, no note)` if empty.
-- Chronological, newline-separated. Backend always rewrites the whole `Call_Notes__c` field on PATCH (not a delta).
+- Rep name: from `profiles.name` (already stamped on `last_touched_by_name`).
+- Note text: **the rep's exact words, verbatim.** No AI rewriting (see decision log).
+- Empty notes: stamped as `(call logged, no note)`.
+- Order: chronological, newline-separated. The full string is rewritten on every PUT.
 
-## Auth: Salesforce Username-Password OAuth
+### Notes panel content
 
-### One-time setup (user does in SF)
-1. **Setup → App Manager → New Connected App**. Enable OAuth, pick API (Full access) + refresh_token scope. Callback URL can be `https://localhost` (unused).
-2. Note **Consumer Key** (client_id) and **Consumer Secret** (client_secret).
-3. Create an **integration user** (or reuse a seat) with API Enabled permission and access to the Lead object + the two custom fields.
-4. Get the user's **security token** (Setup → Personal → Reset Security Token — it's emailed).
+Free-form text. Whatever the rep types, full string, no formatting. PATCH handler pushes it as-is into `Call_Notes__c`, overwriting the per-call log. A consequence: if a rep edits the Notes tab after a call, the timestamped per-call log on Salesforce gets replaced. This was the explicit choice — Notes tab and Call log tab share the same SF field, and the rep can see (in Call log tab) what's been pushed.
+
+## Auth: Apex REST with `x-api-key`
+
+### One-time setup (Health & Group SF admin owns)
+1. Build an Apex REST class with `@HttpPost`, `@HttpPut` handlers under a path like `/services/apexrest/hv-sales-intel/lead/`.
+2. Expose it via a Salesforce Site so it's reachable at `https://*.my.salesforce-sites.com/...`.
+3. Define the `x-api-key` shared secret. Apex validates it on every call. We store it in our `.env`.
+4. The Apex handler creates/updates the standard Lead object, sets `Lead_Type__c = "Outbound"` (or whatever we pass), validates required fields, returns `{success, message, leadId}`.
 
 ### Runtime flow
-- On the first API call of a process (and on 401/419 refresh), POST to `https://login.salesforce.com/services/oauth2/token`:
-  ```
-  grant_type=password
-  client_id={SF_CLIENT_ID}
-  client_secret={SF_CLIENT_SECRET}
-  username={SF_USERNAME}
-  password={SF_PASSWORD}{SF_SECURITY_TOKEN}    # concatenated, no separator
-  ```
-- Response:
-  ```json
-  {
-    "access_token": "00D5f...!AQ...",
-    "instance_url": "https://yourorg.my.salesforce.com",
-    "token_type": "Bearer",
-    "id": "...", "issued_at": "...", "signature": "..."
-  }
-  ```
-- Cache `access_token` + `instance_url` in-process. No expiry is returned by this flow, so invalidate on 401 and refetch.
-- All subsequent API calls use `Authorization: Bearer {access_token}` against `{instance_url}/services/data/v60.0/...`.
+- Every request: `x-api-key: <SF_API_KEY>` + `Content-Type: application/json`.
+- Create: `POST {SF_APEX_URL}` → `200 {success: true, message: "...", leadId: "00Q..."}`.
+- Update: `PUT {SF_APEX_URL}` body has `Id` field → `200 {success: true, message: "...", leadId: "00Q..."}`.
+- Description-only update: `PUT {SF_APEX_URL}` body has `Id` + `Description` → same response.
+- Errors return non-2xx; `httpx.raise_for_status()` raises and our caller flips status to `failed` + surfaces the warning.
 
-Module: `src/sf_auth.py` — mirrors the pattern of `src/ms_auth.py` (module-level cache + async lock).
+No OAuth, no token caching, no refresh, no `instance_url`. The endpoint URL itself encodes the org + path; the API key is the credential.
 
-### If auth fails or creds are missing → mock mode
-If any of `SF_CLIENT_ID`, `SF_CLIENT_SECRET`, `SF_USERNAME`, `SF_PASSWORD`, `SF_SECURITY_TOKEN` are empty, `salesforce.sync_practice` returns `{"skipped": True, "reason": "sf_not_configured"}` without raising. The rest of the call log flow still runs.
+### Mock mode
+If `SF_APEX_URL` or `SF_API_KEY` is empty, `salesforce.is_configured()` returns `False`, `sync_practice` returns `{"skipped": True, "reason": "sf_not_configured"}` without raising. The rest of the call log flow still runs.
 
 ## Backend modules
 
-### `src/sf_auth.py`
-```
-async def get_access_token() -> tuple[str, str]:
-    """Returns (access_token, instance_url). Cached until 401."""
-
-def invalidate_token() -> None:
-    """Clear cached token after 401, forces next call to re-auth."""
-
-def is_configured() -> bool:
-    """True if all 5 SF_* env vars are set."""
-```
-
 ### `src/salesforce.py`
-```
-async def create_lead(practice: Practice, call_note_line: str, rep_name: str) -> dict:
-    """POST /services/data/v60.0/sobjects/Lead/. Returns the SF response."""
+Functions exported:
 
-async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> None:
-    """PATCH /services/data/v60.0/sobjects/Lead/{id}. 204 No Content on success."""
-
-async def get_owner(sf_lead_id: str) -> tuple[str, str]:
-    """GET /services/data/v60.0/sobjects/Lead/{id}?fields=Id,OwnerId,Owner.Name. Returns (owner_id, owner_name)."""
-
-async def sync_practice(
-    practice: Practice, polished_line: str, rep_name: str
-) -> dict:
-    """
-    Orchestrates create-or-update.
-    Returns {'sf_lead_id': str, 'sf_owner_id': str, 'sf_owner_name': str, 'synced_at': iso}
-    or {'skipped': True, 'reason': str} on mock mode / auth failure.
-    On non-skip failure, raises — caller decides how to surface.
-    """
+```python
+def is_configured() -> bool
+def _build_create_payload(practice: Practice, call_note_line: str) -> dict
+def _build_update_payload(sf_lead_id: str, call_count: int, call_notes: str) -> dict
+async def create_lead(practice: Practice, call_note_line: str) -> dict
+async def update_lead(sf_lead_id: str, call_count: int, call_notes: str) -> dict
+async def update_lead_description(sf_lead_id: str, description: str) -> dict
+async def sync_practice(practice: Practice, polished_line: str) -> dict
 ```
 
-Lead field mapping on CREATE (see "Salesforce request bodies" below). On UPDATE, only `Call_Count__c` and `Call_Notes__c` are PATCHed — we do not touch Status or other fields so reps can manage them freely inside SF.
+`sync_practice` returns either:
+- `{"sf_lead_id": "00Q...", "sf_owner_name": "Office Manager", "synced_at": "..."}`
+- `{"skipped": True, "reason": "sf_not_configured"}`
+
+Note: `sf_owner_id` is **not** returned by the Apex endpoint, so we don't store it. `sf_owner_name` is just an echo of what we sent in `OwnerName`, not a value Salesforce computes.
+
+The module logs every request and response (with body truncated to 500 chars) under the `hvsi.salesforce` logger — see [Vercel deployment](#) spec for log capture details.
 
 ### `src/call_log.py`
-```
-async def polish_note(raw_note: str) -> str:
-    """
-    GPT-4o-mini single-shot. Prompt in code below.
-    Returns polished text; on OpenAI error returns raw_note + ' (unpolished)'.
-    Returns '(call logged, no note)' if raw_note is blank.
-    """
+Functions exported:
 
-async def append_call_note(
-    place_id: str, raw_note: str, profile: Profile
-) -> tuple[Practice, dict | None]:
-    """
-    1. Loads practice.
-    2. Polishes note.
-    3. Builds '[YYYY-MM-DD HH:MM UTC] {rep}: {polished}' line.
-    4. Appends to practice.call_notes (newline-separated; empty → just the line).
-    5. Increments practice.call_count.
-    6. Persists via storage.update_practice_fields (also stamps last_touched_by).
-    7. Calls salesforce.sync_practice(...). On failure, captures warning but does NOT roll back local save.
-    8. Returns (updated_practice, sf_warning_or_none).
-    """
+```python
+async def polish_note(raw_note: str) -> str
+async def append_call_note(place_id: str, raw_note: str, user: dict) -> tuple[dict, str | None]
 ```
 
-### GPT prompt
+`polish_note` — **does not call GPT**. Returns the trimmed raw note, or `"(call logged, no note)"` for blank input. The original design called for GPT polishing; reps explicitly asked to keep their words verbatim (see decision log). The function name and signature are kept so call sites don't need to change if we ever revisit.
 
-```
-You are a sales rep's assistant logging a call in a CRM. Given the rep's
-raw note, produce one clear CRM entry that captures outcome and next steps.
+`append_call_note` orchestrates: load practice → build line → append to `call_notes` → increment `call_count` → call `salesforce.sync_practice` → persist via `update_practice_fields`. Local save always wins; SF failures surface as a warning string.
 
-Rules:
-- 1-3 sentences, max ~200 characters
-- Past tense, third person, professional tone
-- Only use facts present in the raw note — do not invent details
-- No greeting, no sign-off, no bullet points, no quotation marks
+Logged at every step under `hvsi.call_log`.
 
-Rep note:
-{raw_note}
-```
-
-Model: `gpt-4o-mini`. Temperature: 0.3. Max tokens: 120.
+### `src/sf_auth.py` (REMOVED)
+The original design had this module for username-password OAuth token fetch + cache. The Apex REST switch made it unnecessary — there's no token to fetch. The module and its tests (`tests/test_sf_auth.py`) were deleted.
 
 ## API surface
 
 ### `POST /api/practices/{place_id}/call/log`
 
-**Auth:** `get_current_user` (any signed-in rep).
+**Auth:** `get_current_user`.
 
-**Request:**
-```json
-{ "note": "left vm, sounded annoyed, gonna retry thu" }
-```
+**Request:** `{ "note": "..." }` (empty allowed).
 
-Empty or whitespace-only `note` is accepted — produces a `(call logged, no note)` entry.
-
-**Response (success, SF sync worked):**
+**Response (always 200, fail-soft):**
 ```json
 {
-  "practice": { /* full Practice payload with refreshed call_count, call_notes, salesforce_* fields */ },
+  "practice": { /* full Practice with refreshed call_count, call_notes, salesforce_* */ },
   "sf_warning": null
 }
 ```
 
-**Response (success, SF sync skipped or failed — local save still succeeded):**
-```json
-{
-  "practice": { /* call_count and call_notes updated, salesforce_* unchanged if failed */ },
-  "sf_warning": "Salesforce sync failed: {message}. Local log saved."
-}
-```
+On SF failure: `sf_warning: "Salesforce sync failed: ...". Local log saved.` — local DB writes still succeeded.
 
 **Errors:**
 - 401 — not signed in.
 - 404 — place_id not found.
-- 500 — storage / GPT failure (local save itself broke).
+- 500 — local storage write itself failed.
+
+### `PATCH /api/practices/{place_id}` (extended)
+The existing PATCH endpoint accepts `status`, `notes`, `email`. New behavior: if `notes` is being changed AND `practice.salesforce_lead_id` is set AND SF is configured, the backend calls `salesforce.update_lead(lead_id, call_count, notes)` after the local update. The full notes string overwrites `Call_Notes__c`.
+
+If the SF call fails, the response includes `sf_warning: "Salesforce notes sync failed: ..."` alongside the updated practice. Local update is never rolled back.
 
 ## Salesforce request bodies
 
-### CREATE — `POST {instance_url}/services/data/v60.0/sobjects/Lead/`
+### CREATE — `POST {SF_APEX_URL}`
 
 ```json
 {
   "Company": "Houston Family Dental",
-  "LastName": "Office",
-  "Phone": "+17135551234",
-  "Email": "hello@houstonfamilydental.com",
-  "Website": "https://houstonfamilydental.com",
-  "Street": "1234 Main St, Houston, TX 77002",
+  "OwnerName": "Office Manager",
+  "OwnerPhone": "+17135551234",
+  "OwnerEmail": "manager@hfd.com",
+  "Email": "hello@hfd.com",
+  "Website": "https://hfd.com",
+  "Street": "1234 Main St",
   "City": "Houston",
+  "State": "TX",
+  "PostalCode": "",
+  "Country": "USA",
   "Industry": "Healthcare",
   "LeadSource": "HV Sales Intel",
   "Status": "Working - Contacted",
-  "Rating": "Hot",
+  "Lead_Type__c": "Outbound",
   "Description": "Lead Score: 82 | Urgency: 70 | Hiring Signal: 60",
-  "Call_Count__c": 1,
+  "Call_Count__c": "1",
   "Call_Notes__c": "[2026-04-23 10:22 UTC] Sarah Khan: Initial outreach call"
 }
 ```
 
-Field mapping rules:
-
-| Lead field         | Source                                                                 | Notes                                                           |
-| ------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `Company`          | `practice.name`                                                         | Required by SF.                                                 |
-| `LastName`         | `"Office"` (literal)                                                   | Required by SF; v1 uses placeholder.                            |
-| `Phone`            | `practice.phone`                                                        | Passed as-is; SF accepts varied formats.                        |
-| `Email`            | `practice.email` (nullable)                                             | Omitted from payload if null.                                   |
-| `Website`          | `practice.website` (nullable)                                           | Omitted if null.                                                |
-| `Street`           | `practice.address` (full string)                                        | We don't split address components in v1.                        |
-| `City`             | `practice.city` (nullable)                                              | Omitted if null.                                                |
-| `Industry`         | `"Healthcare"` (literal)                                                | All HV leads are healthcare practices.                          |
-| `LeadSource`       | `"HV Sales Intel"` (literal)                                            | Identifies the source in SF reports.                            |
-| `Status`           | `"Working - Contacted"` (literal)                                       | Rep just dialed, so this stage reflects reality.                |
-| `Rating`           | Derived from `practice.lead_score`: ≥75 → Hot, ≥50 → Warm, else Cold.   | Falls back to `"Warm"` if score is null.                        |
-| `Description`      | `"Lead Score: X \| Urgency: Y \| Hiring Signal: Z"`                      | Built from `practice.lead_score`, `urgency_score`, `hiring_signal_score`. Omitted if none scored. |
-| `Call_Count__c`    | `1`                                                                     | First call.                                                     |
-| `Call_Notes__c`    | The single formatted line for this call.                                | Newly created.                                                  |
-
-Only non-null, present fields are included in the POST body — we do not send `"Email": null`.
-
-### UPDATE — `PATCH {instance_url}/services/data/v60.0/sobjects/Lead/{sf_lead_id}`
-
+**Response:**
 ```json
-{
-  "Call_Count__c": 3,
-  "Call_Notes__c": "[2026-04-21 14:10 UTC] Sarah Khan: Left voicemail.\n[2026-04-22 09:15 UTC] Sarah Khan: Spoke with receptionist, call back Thursday.\n[2026-04-23 10:22 UTC] Sarah Khan: Confirmed meeting Friday 2pm."
-}
+{ "success": true, "message": "Lead created successfully", "leadId": "00Q5f00000ABCDEFG" }
 ```
 
-Returns HTTP 204 No Content on success. Only these two fields are PATCHed on subsequent calls; Status, Rating, Description are owned by the rep inside SF after the initial create.
+Field-mapping rules:
 
-### OWNER FETCH — `GET {instance_url}/services/data/v60.0/sobjects/Lead/{sf_lead_id}?fields=Id,OwnerId,Owner.Name`
+| Lead field          | Source                                                                       | Notes                                                              |
+| ------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `Company`           | `practice.name`                                                               | Required by SF.                                                    |
+| `OwnerName`         | `practice.owner_name`                                                         | Empty string if Clay didn't enrich. (Apex tolerates empty.)        |
+| `OwnerPhone`        | `practice.owner_phone` → fallback to `practice.phone`                         | Owner's mobile preferred, business phone fallback.                 |
+| `OwnerEmail`        | `practice.owner_email`                                                        | Empty string if not enriched.                                      |
+| `Email`             | `practice.email`                                                              | Business email (different from `OwnerEmail`).                      |
+| `Website`           | `practice.website`                                                            |                                                                    |
+| `Street`            | `practice.address`                                                            | Full address string; we don't split components.                    |
+| `City` / `State`    | `practice.city` / `practice.state`                                            |                                                                    |
+| `PostalCode`        | `""`                                                                          | We don't have it.                                                  |
+| `Country`           | `"USA"`                                                                       | Literal — all leads are US-based.                                  |
+| `Industry`          | `"Healthcare"`                                                                | Literal.                                                           |
+| `LeadSource`        | `"HV Sales Intel"`                                                            | Literal — identifies source in SF reports.                         |
+| `Status`            | `"Working - Contacted"`                                                       | Literal — rep just dialed.                                         |
+| `Lead_Type__c`      | `"Outbound"`                                                                  | Literal. **Required by Apex.**                                     |
+| `Description`       | `"Lead Score: X \| Urgency: Y \| Hiring Signal: Z"`                            | Built from analysis scores. Empty string if all three are null.    |
+| `Call_Count__c`     | `str(practice.call_count or 1)`                                               | Apex expects string-typed numeric.                                 |
+| `Call_Notes__c`     | The single formatted line for this call.                                      | First line of the chronological log.                               |
+
+All keys are sent (no omission of nulls). Apex tolerates empty strings on optional fields.
+
+### UPDATE (per-call log) — `PUT {SF_APEX_URL}`
 
 ```json
 {
   "Id": "00Q5f00000ABCDEFG",
-  "OwnerId": "0055f00000XYZ",
-  "Owner": { "attributes": {...}, "Name": "Sarah Khan" }
+  "Status": "Working - Contacted",
+  "Lead_Type__c": "Outbound",
+  "Call_Count__c": "3",
+  "Call_Notes__c": "[ts1] ...\n[ts2] ...\n[ts3] ..."
 }
 ```
 
-Fetched once after create, and on every subsequent update (owner can be reassigned in SF). Extracted as `(OwnerId, Owner.Name)` and written to `salesforce_owner_id` + `salesforce_owner_name`.
+Only Status, Lead_Type__c, Call_Count__c, Call_Notes__c are updated on subsequent calls. Status and Lead_Type__c are restated to satisfy Apex's required-field validation; the practical effect is the same as not touching them (rep can change Status in SF, our updates won't roll it back unless the same value matches).
 
-## Frontend changes
+### UPDATE (Description only) — `PUT {SF_APEX_URL}`
 
-### Component: `web/components/call-log-modal.tsx` (new)
+When the Notes tab content changes via PATCH, only Description-relevant fields are sent:
 
-Props: `{ practice, open, onClose, onLogged }`.
-
-Structure:
-- Overlay + centered card.
-- Header: "Log call — {practice.name}".
-- Textarea: placeholder "What happened? (we'll polish this for Salesforce)".
-- Two buttons: [Cancel] (grey) and [Save & Call] (teal).
-- Save & Call:
-  1. POST `/api/practices/{id}/call/log` with `{ note }`.
-  2. On success, call `onLogged(response)` (parent refreshes practice state; shows `sf_warning` if present).
-  3. Close modal.
-  4. `openRingCentralCall(practice.phone)` (existing helper).
-- Loading state: disable buttons, spinner on Save & Call.
-- Empty note is allowed; submits with `note: ""`.
-
-### Component: `web/components/call-button.tsx` (modify)
-
-Currently opens RingCentral directly. Change to: open the modal instead. The existing RingCentral handoff moves into the modal's Save & Call handler.
-
-Accepts a new prop `onLogged?: (response) => void` so the parent can refresh.
-
-### Component: `web/components/practice-card.tsx` (light edit)
-
-Wire `onLogged` from the parent into `<CallButton>`. When the response comes back, update the local practice state so the card shows refreshed `call_count`, `last_touched_*`, and `salesforce_owner_name`.
-
-Add a compact "Last call" strip (visible when `practice.call_count > 0`):
-```
-📞 3 calls · last logged 2m ago · owner: Sarah Khan (SF)
-```
-
-### Component: `web/app/practice/[place_id]/page.tsx` (light edit)
-
-Repurpose the existing (currently disabled) **Activity** tab inside `ActionsPanel` as the **Call log** tab. Read-only view of `practice.call_notes` — styled as a chronological list (parse by newline, one entry per line). At the top: a button **[+ Log call]** that opens the same `<CallLogModal>`. Also show the summary strip: `Total calls: N · Last synced to SF: 2m ago · Owner: Sarah Khan`.
-
-No new tab added — Notes / Email / Call log are the three tabs.
-
-### API client: `web/lib/api.ts`
-```ts
-export async function logCall(placeId: string, note: string) {
-  return apiFetch(`/api/practices/${placeId}/call/log`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ note }),
-  })
+```json
+{
+  "Id": "00Q5f00000ABCDEFG",
+  "Status": "Working - Contacted",
+  "Lead_Type__c": "Outbound",
+  "Description": "Free-form notes from rep..."
 }
 ```
 
-### Types: `web/lib/types.ts`
+(Confusingly, the post-merge implementation routes Notes tab updates through `update_lead` rather than `update_lead_description` — so they actually go to `Call_Notes__c`, not `Description`. The `update_lead_description` helper exists for future use. See decision log for the rationale.)
 
-Extend `Practice`:
-```ts
-salesforce_lead_id: string | null
-salesforce_owner_id: string | null
-salesforce_owner_name: string | null
-salesforce_synced_at: string | null
-call_count: number
-call_notes: string | null
-```
+## Frontend
 
-Mock data gets these new fields populated with sensible defaults (`0`, `null`).
+### `web/components/call-log-modal.tsx`
+Unchanged from original spec. Modal with a textarea, **Save & Call** writes via `logCall()` then opens RingCentral.
+
+### `web/components/notes-panel.tsx`
+Updated copy: subtitle now reads *"Saved to the Salesforce Lead's `Call_Notes__c` field."* — reps know that whatever they type here is what shows up in the Lead record on SF.
+
+### `web/components/practice-card.tsx`
+Adds the "Last call" attribution strip (call count + last synced + owner name from SF) — unchanged from original spec.
+
+### `web/components/call-button.tsx`
+Wraps the existing dialer with the `CallLogModal` — unchanged from original spec.
+
+### `web/app/practice/[place_id]/page.tsx`
+Activity tab repurposed as Call log tab — unchanged from original spec. Same-origin handling added for Vercel production builds (see deployment spec).
 
 ## Env vars
 
-Add to `.env` and `.env.example`:
+`.env`:
 
 ```
-SF_CLIENT_ID=
-SF_CLIENT_SECRET=
-SF_USERNAME=
-SF_PASSWORD=
-SF_SECURITY_TOKEN=
-SF_LOGIN_URL=https://login.salesforce.com   # or https://test.salesforce.com for sandbox
-SF_API_VERSION=v60.0
+SF_APEX_URL=https://healthandgroup.my.salesforce-sites.com/.../services/apexrest/hv-sales-intel/lead/
+SF_API_KEY=<the static x-api-key value>
 ```
 
-Add to `Settings` class in `src/settings.py` (all strings, all default `""`).
+The legacy `SF_CLIENT_ID`, `SF_CLIENT_SECRET`, `SF_USERNAME`, `SF_PASSWORD`, `SF_SECURITY_TOKEN`, `SF_LOGIN_URL`, `SF_API_VERSION` settings still exist in `Settings` for backwards compatibility with existing `.env` files but are not read anywhere. Safe to delete from `.env`.
 
 ## Error handling & edge cases
 
-| Situation                                | Behavior                                                                                   |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| OpenAI key missing or API errors         | Polish returns `raw + " (unpolished)"`. Log append proceeds. SF sync proceeds.             |
-| Empty note from rep                      | Append `[ts] {rep}: (call logged, no note)`. Skip GPT entirely.                            |
-| All SF env vars empty                    | `sync_practice` returns `{skipped: True, reason: "sf_not_configured"}`. Endpoint returns 200 with `sf_warning: null`. |
-| SF auth fails (bad creds)                | Endpoint returns 200 with `sf_warning: "Salesforce sync failed: ..."`. Local save persisted. Next click retries auth. |
-| SF PATCH fails with 404 (Lead deleted)   | Clear `salesforce_lead_id` locally and retry as CREATE. One automatic retry per call.       |
-| SF PATCH returns 401                     | `sf_auth.invalidate_token()`, retry once. If it fails again, surface warning.              |
-| Supabase write fails                     | 500. Endpoint rolls back — call is not considered logged.                                  |
-| Counter / SF Call_Count drift            | Self-healing: every PATCH sends the full local count and full notes string, overwriting SF. |
-| Concurrent calls to same practice        | Small race window (read count, write count+1). Acceptable for v1; single-user-per-lead is typical. |
-| Network timeout on SF POST/PATCH         | `httpx` 15s timeout. Timeout → warning, local save persisted.                              |
+| Situation                                | Behavior                                                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `SF_APEX_URL` or `SF_API_KEY` missing    | `sync_practice` returns `{skipped: True, reason: "sf_not_configured"}`. Endpoint returns 200 + `sf_warning: null`. Local save persisted. |
+| Apex returns non-2xx                     | `httpx.raise_for_status` raises. `call_log` catches, sets `sf_warning: "Salesforce sync failed: ..."`. Local save persisted. |
+| Apex returns 200 but `success: false`    | We treat as success (httpx doesn't see it as error). The `message` field is logged but not surfaced to the rep. *Future:* parse `success` and treat false as failure. |
+| Apex returns response without `leadId`   | `sync_practice` raises `RuntimeError`. Caller catches, surfaces warning. Practice keeps `salesforce_lead_id = null`, next call retries as create. |
+| Network timeout (>20s)                   | `httpx.HTTPError` propagates. Same fail-soft path.                                                                      |
+| Notes panel save when `salesforce_lead_id` is null | PATCH succeeds locally; SF call is skipped (no lead exists yet). Rep needs to log a Call first to seed the SF Lead. |
+| Notes panel save when SF is unconfigured | PATCH succeeds locally; SF block is skipped silently.                                                                  |
+| Notes panel save while a Call is in flight | Race window: both writes target Call_Notes__c. Last write wins. Acceptable for v1; reps don't typically multi-edit.   |
+| `Call_Count__c` drift between local and SF | Self-healing — every PUT sends the full local count.                                                                 |
+| Apex requires `Lead_Type__c` and we forget | 400 on every call. Tests guard the payload shape.                                                                     |
 
 ## Testing
 
-Mirrors the pattern of `tests/test_ms_auth.py`, `tests/test_email_send.py`, `tests/test_email_gen.py`.
+`tests/test_salesforce.py` (10 tests):
+- `is_configured` true/false combinations
+- `_build_create_payload` includes all required fields
+- `_build_create_payload` falls back `OwnerPhone` to practice phone
+- `_build_create_payload` handles missing optionals (returns empty strings, not nulls)
+- `_build_update_payload` shape
+- `create_lead` posts with `x-api-key` header to the right URL
+- `update_lead` puts with the right body
+- `sync_practice` skips when not configured
+- `sync_practice` create branch when `lead_id` is null
+- `sync_practice` update branch when `lead_id` exists
 
-- `tests/test_sf_auth.py` — 3 tests: token fetch + cache + 401 invalidation; `is_configured()` with missing vars.
-- `tests/test_salesforce.py` — 4 tests: create_lead payload shape, update_lead PATCH body, get_owner parsing, sync_practice skips when not configured.
-- `tests/test_call_log.py` — 4 tests: polish_note happy path (GPT mocked), polish_note fallback on OpenAI error, append_call_note formats line correctly, append_call_note increments count.
-- `tests/test_api_call_log.py` — 3 tests: endpoint requires auth (401), happy path returns practice+null_warning, SF failure returns practice+warning string.
+`tests/test_call_log.py` (7 tests):
+- `polish_note` empty marker for blank input
+- **`polish_note` returns raw text verbatim** (renamed from "uses GPT")
+- **`polish_note` strips surrounding whitespace** (new)
+- `append_call_note` increments count + formats line
+- `append_call_note` sets SF fields on success
+- `append_call_note` surfaces warning on failure
+- `append_call_note` raises `LookupError` when practice missing
 
-All tests use mocked HTTP (`respx` or `httpx.MockTransport`) and a mocked `AsyncOpenAI`. No real SF or OpenAI calls in CI.
+`tests/test_api_call_log.py`: 5 tests for the endpoint (auth, happy path, warning, 404, empty note).
 
-## Non-goals / explicitly not happening in v1
+`scripts/sf_live_smoke.py`: live integration test. Hits the real Apex endpoint with creds from `.env`. Creates 2 leads, updates both, prints responses. Run with `python scripts/sf_live_smoke.py`. Useful for verifying SF-side changes haven't broken the contract.
 
-- Rep cannot preview/edit polished note before it's saved (decision confirmed: silent auto-save).
-- Notes are not undoable once appended. To correct a mistake, reps edit in SF or we add editing in v2.
-- Raw note is not persisted anywhere after polishing completes.
-- We don't send analysis scores to separate custom SF fields — they go into `Description` as a single line.
-- Status/Rating are set on CREATE only. Further lifecycle is managed in SF.
-- No webhook / inbound sync from SF back to Supabase.
-- Pressing Call multiple times rapidly is not debounced server-side in v1 (UI disables the button while the POST is in flight).
+## Decision log (post-implementation)
 
-## Open questions (resolved)
+1. **Apex REST instead of standard REST** — H&G's SF admin team already had an Apex endpoint with bespoke validation rules; using it lets the SF side own the schema instead of us. Side benefit: simpler auth (one static key) vs OAuth refresh dance.
 
-1. ~~Auth flow?~~ → Username-Password OAuth.
-2. ~~Custom SF fields for scores?~~ → No, scores go in `Description`.
-3. ~~Modal-on-click vs inline?~~ → Modal on click (option 1).
-4. ~~GPT preview vs silent?~~ → Silent auto-save.
-5. ~~Account/Contact vs Lead?~~ → Lead.
-6. ~~Update Status on every call?~~ → No, Status set on CREATE only.
+2. **No GPT polishing of call notes** — early test runs polished "left vm, gonna retry thu" into "Left voicemail. Will retry Thursday." Reps preferred their own shorthand because (a) it was faster to skim across a long Lead's history, (b) GPT occasionally introduced facts that weren't in the raw note. The `polish_note` function still exists but returns the raw text trimmed.
+
+3. **Notes panel writes to `Call_Notes__c`, not `Description`** — initial implementation routed PATCH-notes to `update_lead_description`. Switched after the SF admin pointed out that SF reports + dashboards filter on `Call_Notes__c`, not Description, and reps wanted notes to count toward "lead activity." The `update_lead_description` helper is left in place for future use.
+
+4. **`Lead_Type__c` always `"Outbound"`** — Apex side requires it as a non-null picklist. We have no inbound leads from this app, so it's always Outbound. Future: if the app ever ingests web-form leads, switch on source.
+
+5. **Owner ID not stored** — Apex doesn't return it. We could query SF separately to get OwnerId, but the OwnerName echo is sufficient for the UI's "owner: X (SF)" attribution strip.
+
+6. **`sf_auth.py` removed entirely** — no token to cache.
+
+7. **Same Lead used for Notes panel + per-call log** — `Call_Notes__c` is the canonical "what's happened with this lead" field. Reps can edit Notes and re-log Calls; both write to the same field; the most recent write wins. The Call log tab shows exactly what's in `practices.call_notes` so the rep can see what's been pushed to SF.
 
 ## Success criteria
 
-- First call on a fresh practice creates a SF Lead; `salesforce_lead_id` populated; `salesforce_owner_name` visible on the card.
-- Second call PATCHes the same Lead; `Call_Count__c` goes from 1 to 2; `Call_Notes__c` has both timestamped entries.
-- Rep's raw note is noticeably cleaner in SF than what they typed.
+- First call on a fresh practice creates a Lead via the Apex endpoint; `salesforce_lead_id` populated.
+- Second call PUTs the same Lead; `Call_Count__c` goes from 1 to 2; `Call_Notes__c` has both timestamped entries.
+- Rep's notes appear verbatim in `Call_Notes__c`.
+- Notes panel typing → save → text appears in `Call_Notes__c` on SF (overwriting the per-call log if any).
 - With SF creds missing, modal still works end-to-end (local log + dialer); no errors shown to rep.
-- With SF creds present but wrong, call still logs locally; rep sees a discreet warning; next corrected attempt self-heals.
-- `pytest -q` passes; frontend typechecks clean.
+- With SF creds present but wrong, call still logs locally; rep sees a discreet warning in the console; next corrected attempt self-heals (full call_count + call_notes string sent).
+- `pytest -q` passes (>= 80 tests). `npx tsc --noEmit` clean.
+- `scripts/sf_live_smoke.py` exits 0 against a real SF org.

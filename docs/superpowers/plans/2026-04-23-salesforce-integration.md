@@ -1,14 +1,53 @@
 # Salesforce Integration Implementation Plan
 
+> **Status:** Implemented and shipped. Original plan executed end-to-end. Architecture changed during execution — see "Post-implementation amendments" at the top of this file before reading the original tasks below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** When a rep clicks Call, log a GPT-polished note to Supabase, create/update a Salesforce Lead with running call history + call count, and store the SF Lead ID + owner on the practice.
+**Goal:** When a rep clicks Call, log a note to Supabase, create/update a Salesforce Lead with running call history + call count, and store the SF Lead ID on the practice.
 
-**Architecture:** Three isolated backend modules (`sf_auth.py`, `salesforce.py`, `call_log.py`) behind one new endpoint `POST /api/practices/{place_id}/call/log`. Modal-on-click UX on the frontend. Fail-soft SF sync — local save always wins. Mirrors the conventions already used by `ms_auth.py` / email outreach.
+**Architecture:** Two backend modules (`salesforce.py`, `call_log.py`) behind one new endpoint `POST /api/practices/{place_id}/call/log`, plus PATCH `/api/practices/{id}` extension for Notes-tab sync. Modal-on-click UX on the frontend. Fail-soft SF sync — local save always wins.
 
-**Tech Stack:** FastAPI, pydantic-settings, httpx (AsyncClient), AsyncOpenAI (gpt-4o-mini), Supabase service-role client, Next.js 14 App Router, React.
+**Tech Stack:** FastAPI, pydantic-settings, httpx (AsyncClient), Supabase service-role client, Next.js 14 App Router, React.
 
 **Spec:** [docs/specs/2026-04-23-salesforce-integration-design.md](../../specs/2026-04-23-salesforce-integration-design.md)
+
+---
+
+## Post-implementation amendments (2026-04-27)
+
+Items below superseded parts of the original plan. The original tasks (Tasks 1–16) remain as historical record but should not be re-executed against current code.
+
+1. **Auth: Apex REST + `x-api-key` instead of username-password OAuth.**
+   - `src/sf_auth.py` was created in Task 4, then **deleted entirely** after the Apex switch. `tests/test_sf_auth.py` deleted.
+   - Settings: `SF_APEX_URL` and `SF_API_KEY` replaced the 7 OAuth vars. Legacy vars stay in `Settings` class for backwards compatibility.
+   - `src/salesforce.py` rewritten: helpers now POST + PUT to a single Apex endpoint with the `x-api-key` header, no `instance_url` / no Bearer token. Response shape is `{success, message, leadId}`.
+
+2. **Call notes are NOT GPT-polished.**
+   - `polish_note` returns the raw rep note verbatim (trimmed). The function name and signature kept so call sites don't need to change.
+   - `tests/test_call_log.py` updated: `test_polish_note_uses_gpt_when_configured` and `test_polish_note_falls_back_*` tests replaced with `test_polish_note_returns_raw_text_verbatim` and `test_polish_note_strips_surrounding_whitespace`.
+
+3. **Owner ID is not stored.**
+   - The Apex endpoint doesn't return `OwnerId` — only echoes the `OwnerName` we sent. Our `sync_practice` returns `sf_lead_id` + `sf_owner_name` + `synced_at`, no `sf_owner_id`.
+   - `salesforce_owner_id` column on `practices` still exists (kept harmless), but the call-log path doesn't write to it.
+   - `test_append_call_note_sets_sf_fields_when_sync_succeeds` updated to assert `salesforce_owner_id` NOT in stored fields.
+
+4. **`Lead_Type__c` is required.** Every create + update payload includes `"Lead_Type__c": "Outbound"`. Tests assert it.
+
+5. **Owner contact fields go on Lead create.** The Apex payload includes `OwnerName`, `OwnerPhone`, `OwnerEmail` — typically populated by the Clay enrichment step that runs before the first call. `OwnerPhone` falls back to `practice.phone` when the owner-specific phone is missing.
+
+6. **Notes panel pushes to `Call_Notes__c`, not `Description`.**
+   - The PATCH `/api/practices/{id}` endpoint, when `notes` is changed AND `salesforce_lead_id` is set, calls `salesforce.update_lead(id, call_count, notes)` — overwriting `Call_Notes__c`.
+   - `update_lead_description` helper exists in `salesforce.py` but is currently unused. Kept for future routing if the SF admin team decides Notes should go elsewhere.
+   - NotesPanel UI copy updated: `"Saved to the Salesforce Lead's Call_Notes__c field."`.
+
+7. **Live smoke test added.** `scripts/sf_live_smoke.py` runs four real Apex calls (create → update → sync_practice create → sync_practice update) end-to-end. Skipped if creds aren't configured. Use this when verifying SF-side schema changes.
+
+8. **Logging added.** Backend uses `hvsi.salesforce`, `hvsi.call_log`, `hvsi.api` named loggers, with stdout handler configured at INFO level in `api/index.py` so Vercel captures them. Every SF request and response is logged (response body truncated to 500 chars). See [Vercel deployment spec](../../specs/2026-04-27-vercel-deployment-design.md).
+
+9. **Production deployment.** The whole app now deploys to Vercel as a monorepo. `web/` builds via Next.js, `api/` is mapped to a serverless Python function via `vercel.json` rewrite (`/api/(.*)` → `/api/index.py`). Frontend uses an empty `NEXT_PUBLIC_API_URL` to indicate same-origin requests in production. See [deployment spec](../../specs/2026-04-27-vercel-deployment-design.md).
+
+If you need to recreate this work in a new environment, follow the original tasks below for the Supabase migration, settings, model, frontend wiring, and call-log flow — then apply the amendments above to the salesforce + call_log modules.
 
 ---
 

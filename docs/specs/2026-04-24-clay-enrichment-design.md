@@ -1,7 +1,7 @@
 # Clay Owner Enrichment — Design Spec
 
-**Date:** 2026-04-24
-**Status:** Draft — awaiting review
+**Date:** 2026-04-24 (revised 2026-04-27 with field-mechanic notes)
+**Status:** Backend implemented; Clay-side table setup in progress, see "Clay setup gotchas" below.
 
 ## Goal
 
@@ -324,6 +324,34 @@ CLAY_INBOUND_SECRET=
 Add to `Settings` (`src/settings.py`): three strings, default `""`.
 
 `CLAY_INBOUND_SECRET` is any random string you generate (e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Paste the same value into Clay's Send Webhook headers and our `.env`.
+
+**Note on `CLAY_TABLE_API_KEY`** (revised 2026-04-27): Clay v3 webhook sources expose an "Authentication token" that we send as the `x-clay-webhook-auth` header (not `Authorization: Bearer`). Some webhook sources are unauthenticated (the URL itself contains the secret); in that case `CLAY_TABLE_API_KEY` can be left blank and `src/clay.py` simply omits the auth header. The trigger logic only requires `CLAY_TABLE_WEBHOOK_URL` to be set.
+
+## Clay setup gotchas (2026-04-27)
+
+Captured during the first end-to-end setup against a real Clay workspace. Save anyone re-doing this from re-discovering each one.
+
+1. **Auth header name**: Clay v3 webhook sources require `x-clay-webhook-auth: <token>` (not `Authorization: Bearer ...`, not `x-clay-api-key`). The token is exposed in the source's "Authentication token" panel — click "Refresh auth token" if it's hidden.
+
+2. **Sandbox Mode**: visible top-right of every Clay workbook. When ON, outbound actions (HTTP API, Send Webhook) silently no-op. The button label flips between "Sandbox Mode" (when off) and "Disable Sandbox" (when on). Verify it's OFF before testing.
+
+3. **HTTP API action gating**: by default, Clay refuses to fire the action on a row if any column referenced in the body is null. Two ways around this:
+   - **Remove empty values toggle** (in the action's Configure tab) — when ON, null fields are stripped from the body. Doesn't help if Clay also tracks "input readiness" upstream.
+   - **Strip optional fields from the body entirely** — only include `place_id` + `owner_name` + `owner_email` (most reliable to populate). Phone and LinkedIn are optional in our schema and our backend handles missing fields fine.
+
+4. **`Custom Waterfall` column type**: Clay auto-types the "Find People at Company" output column as URL because providers often return LinkedIn URLs as a primary value. The column actually stores a Person object with sub-fields (`Full Name`, `LinkedIn Url`, `Current Job Title`). The column **must be retyped to Text** (or Object) for downstream enrichments to read it correctly. Findymail's email finder will silently fail with "Missing input" otherwise.
+
+5. **Account headers carry over malformed entries**: when configuring an HTTP API account, Clay's UI has a placeholder text "Header value" / "Header name" in the empty input fields. If you hit Add before typing anything, those placeholders sometimes get persisted as actual header rows, which then show up as `Header name must be a valid HTTP token ["Header value"]` errors when the action fires. Fix: open the account in Manage accounts and delete any rows with placeholder-text-as-name. Or skip the account model entirely and put headers inline on the action.
+
+6. **"Save and don't run"** vs **"Save and run X rows"**: Clay's Save button has a hidden dropdown. "Save and don't run" is the default and means the action stays dormant — it won't fire on existing rows. To trigger on past rows, pick "Save and run X rows" or use the play icon on the column header.
+
+7. **Field name mapping in column picker**: the picker shows column DISPLAY names which sometimes differ from internal references. When pointing one enrichment's input at another's output (e.g. Findymail Phone needs the Profile URL output), use the column picker dialog (`/` key in formula or click the chevron) — don't hand-type `{{ColumnName}}`.
+
+8. **Phone enrichments need a LinkedIn URL**: every mobile-phone provider in Clay's catalog (LeadMagic, Findymail, Datagma, etc.) takes a LinkedIn profile URL as input, not Full Name + Domain. So the chain becomes: *Find People at Company → Find LinkedIn URL (Champify or similar) → Find Mobile Phone*, even though the first enrichment usually returns a LinkedIn URL embedded in its Person object. The simplest path is to add a Champify "Find professional profile URL" column between people-find and phone-find.
+
+9. **Clay → our backend reachability**: in local dev, Clay's servers can't reach `localhost:8000`. Use `ngrok http 8000` to expose the backend, paste the ngrok URL into Clay's Send Webhook configuration. ngrok-free URLs change on each `ngrok` restart — update Clay every time. Free plan users need to verify their account first (`ngrok config add-authtoken <token>` after sign-up).
+
+10. **Inspect every webhook hit**: ngrok provides a local web UI at `http://127.0.0.1:4040` that shows every request hitting the tunnel, including request body, response body, and timing. This is the fastest way to confirm Clay actually fired the action. If the inspector shows nothing, Clay isn't sending — debug Clay's gating, not the backend.
 
 ## Error handling & edge cases
 
