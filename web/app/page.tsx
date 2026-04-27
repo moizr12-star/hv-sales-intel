@@ -84,6 +84,38 @@ function PageContent() {
 
   useSessionSnapshot(practices, filters, sidebarRef)
 
+  // Re-fetch from DB whenever a filter changes (debounced 300ms).
+  // The actual filtering still happens in-memory; this just guarantees
+  // the source list is fresh on every filter interaction.
+  const filterKey = JSON.stringify({
+    cat: filters.cat,
+    rating: filters.rating,
+    minIcp: filters.minIcp,
+    tags: filters.tags,
+    enriched: filters.enriched,
+    owner: filters.owner,
+    search: filters.search,
+  })
+  useEffect(() => {
+    if (!hydratedFromDb) return  // skip initial mount; main hydrate already runs
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const dbRows = await listPractices({ limit: 200 })
+        if (!cancelled && dbRows.length > 0) {
+          setPractices(dbRows)
+        }
+      } catch {
+        /* keep current */
+      }
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey])
+
   const handleSearch = useCallback(
     async (query: string) => {
       setIsLoading(true)
