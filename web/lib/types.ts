@@ -97,6 +97,7 @@ export interface User {
   id: string
   email: string
   name: string | null
-  role: "admin" | "rep"
+  role: "admin" | "sdr"
   created_at?: string
+  is_bootstrap_admin?: boolean
 }

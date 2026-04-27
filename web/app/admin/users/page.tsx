@@ -9,7 +9,7 @@ interface AdminUser {
   id: string
   email: string
   name: string | null
-  role: "admin" | "rep"
+  role: "admin" | "sdr"
   created_at: string
   practices_touched: number
 }
@@ -20,7 +20,11 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [form, setForm] = useState({ email: "", name: "", password: "", role: "rep" })
+  const [form, setForm] = useState({ email: "", name: "", password: "", role: "sdr" })
+
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null)
+  const [resetPassword, setResetPassword] = useState("")
+  const [resetting, setResetting] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
@@ -58,7 +62,7 @@ export default function AdminUsersPage() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail ?? `HTTP ${res.status}`)
       }
-      setForm({ email: "", name: "", password: "", role: "rep" })
+      setForm({ email: "", name: "", password: "", role: "sdr" })
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -75,6 +79,30 @@ export default function AdminUsersPage() {
     })
     if (res.ok) load()
     else setError(`HTTP ${res.status}`)
+  }
+
+  async function handleReset(target: AdminUser) {
+    if (!resetPassword) return
+    setResetting(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/users/${target.id}/reset-password`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: resetPassword }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail ?? `HTTP ${res.status}`)
+      }
+      setResetTarget(null)
+      setResetPassword("")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setResetting(false)
+    }
   }
 
   if (authLoading) return <div className="p-10 text-gray-500">Loading...</div>
@@ -100,10 +128,10 @@ export default function AdminUsersPage() {
 
       <main className="max-w-4xl mx-auto p-8 space-y-8">
         <section>
-          <h2 className="font-serif text-xl font-bold mb-4">Create rep</h2>
+          <h2 className="font-serif text-xl font-bold mb-4">Create user</h2>
           <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3 bg-white/80 p-4 rounded-xl">
             <input
-              placeholder="Email"
+              placeholder="Email (@healthandgroup.com)"
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -118,7 +146,7 @@ export default function AdminUsersPage() {
               className="text-sm rounded-lg border border-gray-200 px-3 py-2"
             />
             <input
-              placeholder="Initial password"
+              placeholder="Initial password (8+ chars, mixed case, number, special)"
               type="text"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -131,7 +159,7 @@ export default function AdminUsersPage() {
               onChange={(e) => setForm({ ...form, role: e.target.value })}
               className="text-sm rounded-lg border border-gray-200 px-3 py-2"
             >
-              <option value="rep">Rep</option>
+              <option value="sdr">SDR</option>
               <option value="admin">Admin</option>
             </select>
             <button
@@ -163,30 +191,90 @@ export default function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-t border-gray-200/50">
-                    <td className="p-3">{u.email}</td>
-                    <td className="p-3">{u.name ?? "—"}</td>
-                    <td className="p-3 capitalize">{u.role}</td>
-                    <td className="p-3">{u.practices_touched}</td>
-                    <td className="p-3 text-gray-500">{u.created_at.slice(0, 10)}</td>
-                    <td className="p-3 text-right">
-                      {u.id !== user.id && (
-                        <button
-                          onClick={() => handleDelete(u.id)}
-                          className="text-rose-600 hover:text-rose-800"
-                          title="Delete user"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {users.map((u) => {
+                  const blocked = u.role === "admin" && !user.is_bootstrap_admin
+                  return (
+                    <tr key={u.id} className="border-t border-gray-200/50">
+                      <td className="p-3">{u.email}</td>
+                      <td className="p-3">{u.name ?? "—"}</td>
+                      <td className="p-3 uppercase">{u.role}</td>
+                      <td className="p-3">{u.practices_touched}</td>
+                      <td className="p-3 text-gray-500">{u.created_at.slice(0, 10)}</td>
+                      <td className="p-3 text-right space-x-3">
+                        {u.id !== user.id && (
+                          <>
+                            <button
+                              onClick={() => !blocked && setResetTarget(u)}
+                              disabled={blocked}
+                              title={blocked
+                                ? "Only the bootstrap admin can reset another admin's password."
+                                : "Reset password"}
+                              className={`text-xs underline ${blocked
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-teal-700 hover:text-teal-900"}`}
+                            >
+                              Reset password
+                            </button>
+                            <button
+                              onClick={() => handleDelete(u.id)}
+                              className="text-rose-600 hover:text-rose-800 align-middle"
+                              title="Delete user"
+                            >
+                              <Trash2 className="w-4 h-4 inline" />
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}
         </section>
+
+        {resetTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => !resetting && setResetTarget(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-xl bg-white shadow-xl p-5 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-serif text-base font-bold">
+                Reset password for {resetTarget.email}
+              </h3>
+              <input
+                type="text"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="New password"
+                className="w-full text-sm rounded-lg border border-gray-200 px-3 py-2"
+              />
+              <p className="text-[11px] text-gray-500">
+                Min 8 chars · 1 upper · 1 lower · 1 number · 1 special.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setResetTarget(null)}
+                  disabled={resetting}
+                  className="text-xs px-3 py-1.5 rounded-lg text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleReset(resetTarget)}
+                  disabled={resetting || !resetPassword}
+                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                >
+                  {resetting && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {resetting ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

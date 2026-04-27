@@ -275,3 +275,17 @@ export async function enrichPractice(
     { method: "POST" },
   )
 }
+
+export async function changeMyPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>("/api/me/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
+}
