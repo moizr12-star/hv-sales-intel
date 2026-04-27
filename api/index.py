@@ -792,6 +792,7 @@ class PatchPracticeRequest(BaseModel):
     status: str | None = None
     notes: str | None = None
     email: str | None = None
+    assigned_to: str | None = None
 
 
 @app.patch("/api/practices/{place_id}")
@@ -809,6 +810,17 @@ async def patch_practice(
         fields["notes"] = body.notes
     if body.email is not None:
         fields["email"] = body.email
+    if body.assigned_to is not None:
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin only: assignment changes")
+        if body.assigned_to == "":
+            fields["assigned_to"] = None
+            fields["assigned_at"] = None
+            fields["assigned_by"] = None
+        else:
+            fields["assigned_to"] = body.assigned_to
+            fields["assigned_at"] = datetime.now(timezone.utc).isoformat()
+            fields["assigned_by"] = user["id"]
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
