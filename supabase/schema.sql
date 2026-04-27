@@ -55,7 +55,7 @@ create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer as $$
 begin
   insert into public.profiles (id, email, name, role)
-  values (new.id, new.email, new.raw_user_meta_data->>'name', 'rep')
+  values (new.id, new.email, new.raw_user_meta_data->>'name', 'sdr')
   on conflict (id) do nothing;
   return new;
 end;
