@@ -106,3 +106,15 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+def is_bootstrap_admin(user: dict) -> bool:
+    """True if this user's email matches the configured bootstrap admin.
+
+    Used to gate cross-admin operations (e.g., resetting another admin's
+    password). Comparison is case-insensitive.
+    """
+    bootstrap_email = (settings.bootstrap_admin_email or "").lower()
+    if not bootstrap_email:
+        return False
+    return (user.get("email") or "").lower() == bootstrap_email

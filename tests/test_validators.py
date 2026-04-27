@@ -76,3 +76,37 @@ def test_validate_password_rejects_no_special():
 def test_validate_password_rejects_empty():
     with pytest.raises(ValueError):
         validate_password("")
+
+
+# ---------- is_bootstrap_admin ----------
+
+from unittest.mock import patch
+
+from src.auth import is_bootstrap_admin
+
+
+def test_is_bootstrap_admin_matches_email_case_insensitive():
+    user = {"email": "Admin@HealthAndGroup.com"}
+    with patch("src.auth.settings") as s:
+        s.bootstrap_admin_email = "admin@healthandgroup.com"
+        assert is_bootstrap_admin(user) is True
+
+
+def test_is_bootstrap_admin_returns_false_for_non_bootstrap():
+    user = {"email": "other@healthandgroup.com"}
+    with patch("src.auth.settings") as s:
+        s.bootstrap_admin_email = "admin@healthandgroup.com"
+        assert is_bootstrap_admin(user) is False
+
+
+def test_is_bootstrap_admin_returns_false_when_setting_empty():
+    user = {"email": "admin@healthandgroup.com"}
+    with patch("src.auth.settings") as s:
+        s.bootstrap_admin_email = ""
+        assert is_bootstrap_admin(user) is False
+
+
+def test_is_bootstrap_admin_handles_user_without_email():
+    with patch("src.auth.settings") as s:
+        s.bootstrap_admin_email = "admin@healthandgroup.com"
+        assert is_bootstrap_admin({}) is False
