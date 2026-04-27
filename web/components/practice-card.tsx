@@ -7,7 +7,6 @@ import type { Practice } from "@/lib/types"
 import type { CallLogResponse } from "@/lib/api"
 import { parseJsonArray, parseIcpBreakdown } from "@/lib/types"
 import { cn, timeAgo } from "@/lib/utils"
-import ScoreBar from "./score-bar"
 import StatusBadge from "./status-badge"
 import CallButton from "./call-button"
 import EnrichButton from "./enrich-button"
@@ -274,17 +273,11 @@ export default function PracticeCard({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <ScoreBar label="Lead" value={practice.lead_score!} />
-            <ScoreBar label="Urgency" value={practice.urgency_score!} />
-            <ScoreBar label="Hiring" value={practice.hiring_signal_score!} />
-          </div>
-
-          {icpBreakdown.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-gray-700 mb-1">
-                ICP score breakdown ({practice.lead_score}/100)
-              </h4>
+          <div>
+            <h4 className="text-xs font-semibold text-gray-700 mb-1">
+              ICP score breakdown ({practice.lead_score}/100)
+            </h4>
+            {icpBreakdown.length > 0 ? (
               <ul className="space-y-1">
                 {icpBreakdown.map((row, i) => (
                   <li key={i} className="text-[11px] text-gray-600 flex items-start gap-2">
@@ -298,8 +291,12 @@ export default function PracticeCard({
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
+            ) : (
+              <p className="text-[11px] text-gray-400 italic">
+                Legacy score — click "Re-analyze" to populate the ICP breakdown.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

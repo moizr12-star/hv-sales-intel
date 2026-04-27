@@ -1,9 +1,8 @@
 import { Globe, Star } from "lucide-react"
 import type { Practice } from "@/lib/types"
 import type { CallLogResponse } from "@/lib/api"
-import { parseJsonArray } from "@/lib/types"
+import { parseJsonArray, parseIcpBreakdown } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import ScoreBar from "./score-bar"
 import CallButton from "./call-button"
 import OwnerMiniCard from "./owner-mini-card"
 
@@ -35,6 +34,7 @@ export default function PracticeInfo({
 }) {
   const painPoints = parseJsonArray(practice.pain_points ?? null)
   const salesAngles = parseJsonArray(practice.sales_angles ?? null)
+  const icpBreakdown = parseIcpBreakdown(practice.icp_breakdown ?? null)
 
   return (
     <div className="space-y-4">
@@ -153,10 +153,29 @@ export default function PracticeInfo({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <ScoreBar label="Lead" value={practice.lead_score!} />
-            <ScoreBar label="Urgency" value={practice.urgency_score!} />
-            <ScoreBar label="Hiring" value={practice.hiring_signal_score!} />
+          <div>
+            <h4 className="text-xs font-semibold text-gray-700 mb-1">
+              ICP score breakdown ({practice.lead_score}/100)
+            </h4>
+            {icpBreakdown.length > 0 ? (
+              <ul className="space-y-1">
+                {icpBreakdown.map((row, i) => (
+                  <li key={i} className="text-[11px] text-gray-600 flex items-start gap-2">
+                    <span className="font-mono text-gray-400 shrink-0 w-12 tabular-nums">
+                      {row.score}/{row.max}
+                    </span>
+                    <span className="font-medium text-gray-700 shrink-0 w-28">
+                      {row.label}
+                    </span>
+                    <span className="text-gray-500">{row.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-gray-400 italic">
+                Legacy score — re-analyze to populate the ICP breakdown.
+              </p>
+            )}
           </div>
         </div>
       )}
