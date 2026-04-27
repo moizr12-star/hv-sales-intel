@@ -214,7 +214,7 @@ function PageContent() {
       />
 
       <main className="relative w-full h-full pt-14">
-        <div className="absolute top-2 left-4 bottom-4 w-[420px] z-10 glass-panel rounded-2xl flex flex-col overflow-hidden">
+        <div className="absolute top-16 left-4 bottom-4 w-[420px] z-10 glass-panel rounded-2xl flex flex-col overflow-hidden">
           <div className="px-5 pt-5 pb-3 border-b border-gray-200/50 flex items-start justify-between gap-2">
             <div>
               <h2 className="font-serif text-lg font-semibold text-gray-900">
