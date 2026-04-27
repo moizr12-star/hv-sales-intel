@@ -448,7 +448,8 @@ def health():
 
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
-    return user
+    from src.auth import is_bootstrap_admin
+    return {**user, "is_bootstrap_admin": is_bootstrap_admin(user)}
 
 
 @app.get("/api/practices")
