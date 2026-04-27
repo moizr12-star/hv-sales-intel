@@ -6,45 +6,25 @@ from src.settings import settings
 
 SYSTEM_PROMPT = """You are a cold call script writer for Health & Virtuals, a healthcare staffing and talent acquisition company.
 
-Given information about a healthcare practice (name, category, analysis summary, pain points, sales angles), generate a structured cold call playbook.
+Given information about a healthcare practice (name, category, location, lead doctor, owner, analysis summary, pain points, sales angles, review excerpts), generate a personalized cold call playbook tailored to THIS specific practice.
 
 Return ONLY valid JSON with this exact structure:
 {
   "sections": [
-    {
-      "title": "Opening",
-      "icon": "phone",
-      "content": "The opening script text..."
-    },
-    {
-      "title": "Discovery Questions",
-      "icon": "search",
-      "content": "3-4 numbered questions..."
-    },
-    {
-      "title": "Pitch",
-      "icon": "target",
-      "content": "The tailored pitch..."
-    },
-    {
-      "title": "Objection Handling",
-      "icon": "shield",
-      "content": "3-4 objections with rebuttals, formatted as 'Objection: ... Response: ...'"
-    },
-    {
-      "title": "Closing",
-      "icon": "check",
-      "content": "The closing script with next steps..."
-    }
+    {"title": "Opening", "icon": "phone", "content": "..."},
+    {"title": "Discovery Questions", "icon": "search", "content": "..."},
+    {"title": "Pitch", "icon": "target", "content": "..."},
+    {"title": "Objection Handling", "icon": "shield", "content": "..."},
+    {"title": "Closing", "icon": "check", "content": "..."}
   ]
 }
 
-Guidelines:
-- Opening: Reference the practice by name, mention something specific about them (category, size, detail from analysis)
-- Discovery Questions: Ask about staffing challenges, hiring timeline, current workflow pain points
-- Pitch: Directly address their specific pain points. Mention Health & Virtuals by name. Focus on staffing solutions they need.
-- Objection Handling: Include "We already have a recruiter", "We can't afford it", "We're not hiring right now", and one specific to their situation
-- Closing: Suggest a 15-minute meeting, offer a free staffing assessment, provide follow-up framing
+Personalization requirements:
+- Opening: If a lead doctor name is provided, ask for them by name ("Hi, may I speak with Dr. Smith?"). Otherwise greet the practice. Reference the city if provided.
+- Discovery Questions: Reference 1-2 specific items from the provided pain_points by name (not generic). 3-4 numbered questions total.
+- Pitch: If review_excerpts are provided, quote ONE excerpt verbatim with leading attribution ("One of your patient reviews mentioned, '...'") and tie it to a Health & Virtuals staffing solution. Mention Health & Virtuals by name.
+- Objection Handling: Cover "We already have a recruiter", "We can't afford it", "We're not hiring right now", and one objection specific to this category.
+- Closing: Reference the city when present ("we've placed staff at multiple [city]-area clinics"). Suggest a 15-minute meeting and a free staffing assessment.
 
 Keep each section 3-6 sentences. Be conversational, not robotic. Use the rep's perspective ("I", "we at Health & Virtuals")."""
 
@@ -55,18 +35,47 @@ async def generate_script(
     summary: str | None,
     pain_points: str | None,
     sales_angles: str | None,
+    *,
+    city: str | None = None,
+    state: str | None = None,
+    rating: float | None = None,
+    review_count: int | None = None,
+    website_doctor_name: str | None = None,
+    owner_name: str | None = None,
+    owner_title: str | None = None,
+    review_excerpts: list[str] | None = None,
 ) -> dict:
-    """Generate a cold call playbook. Uses GPT if API key set, otherwise mock."""
+    """Generate a cold call playbook personalized to the practice."""
     if not settings.openai_api_key:
-        return _mock_script(name, category)
+        return _mock_script(
+            name=name,
+            category=category,
+            website_doctor_name=website_doctor_name,
+            city=city,
+        )
 
-    user_prompt = f"""Generate a cold call playbook for this practice:
+    excerpts = review_excerpts or []
+    location = (
+        f"{city}, {state}" if (city and state) else (city or state or "Unknown")
+    )
+    excerpts_block = (
+        "\n".join(f'- "{ex}"' for ex in excerpts) if excerpts else "(none available)"
+    )
+    user_prompt = f"""Generate a personalized cold call playbook for this practice:
 
 Practice: {name}
 Category: {category or 'Healthcare'}
+Location: {location}
+Rating: {rating if rating is not None else 'unknown'} ({review_count or 0} reviews)
+Lead Doctor: {website_doctor_name or 'Unknown'}
+Owner Contact: {owner_name or 'Unknown'} ({owner_title or 'no title'})
+
 Analysis Summary: {summary or 'No analysis available'}
 Pain Points: {pain_points or '[]'}
 Sales Angles: {sales_angles or '[]'}
+
+Verbatim Patient Review Excerpts:
+{excerpts_block}
 """
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -87,37 +96,82 @@ Sales Angles: {sales_angles or '[]'}
     except Exception:
         pass
 
-    return _mock_script(name, category)
+    return _mock_script(
+        name=name,
+        category=category,
+        website_doctor_name=website_doctor_name,
+        city=city,
+    )
 
 
-def _mock_script(name: str, category: str | None) -> dict:
-    """Return a category-appropriate mock playbook."""
+def _mock_script(
+    name: str,
+    category: str | None,
+    website_doctor_name: str | None = None,
+    city: str | None = None,
+) -> dict:
+    """Return a category-appropriate mock playbook with optional personalization."""
+    cat_label = (category or "healthcare").replace("_", " ")
+    doctor_greeting = (
+        f"Hi, may I speak with {website_doctor_name}?"
+        if website_doctor_name
+        else f"Hi, this is [Your Name] calling from Health & Virtuals about {name}."
+    )
+    city_phrase = f" in the {city} area" if city else ""
+
     return {
         "sections": [
             {
                 "title": "Opening",
                 "icon": "phone",
-                "content": f"Hi, this is [Your Name] calling from Health & Virtuals. I'm reaching out because we specialize in staffing solutions for {(category or 'healthcare').replace('_', ' ')} practices, and I noticed {name} may benefit from some of our services. Do you have a quick moment?",
+                "content": (
+                    f"{doctor_greeting} I'm reaching out because Health & Virtuals "
+                    f"helps {cat_label} practices{city_phrase} with staffing solutions. "
+                    "Do you have a quick moment?"
+                ),
             },
             {
                 "title": "Discovery Questions",
                 "icon": "search",
-                "content": "1. How are you currently handling front desk coverage when staff call out or during peak hours?\n2. Are you finding it challenging to recruit and retain qualified staff in this market?\n3. How much time does your team spend on scheduling and administrative tasks versus patient coordination?\n4. If you could add one more person to your team tomorrow, what role would make the biggest impact?",
+                "content": (
+                    "1. How are you currently handling front desk coverage when staff call out?\n"
+                    "2. Are you finding it challenging to recruit and retain qualified staff in this market?\n"
+                    "3. How much time does your team spend on admin tasks versus patient coordination?\n"
+                    "4. If you could add one more person to your team tomorrow, what role would make the biggest impact?"
+                ),
             },
             {
                 "title": "Pitch",
                 "icon": "target",
-                "content": f"At Health & Virtuals, we provide pre-vetted front desk staff, medical assistants, and administrative support specifically for practices like {name}. We handle recruiting, screening, and onboarding so you can focus on patient care. Our placements typically reduce scheduling delays and free up significant admin time for your existing team.",
+                "content": (
+                    f"At Health & Virtuals, we provide pre-vetted front desk staff, medical "
+                    f"assistants, and administrative support specifically for practices like "
+                    f"{name}. We handle recruiting, screening, and onboarding so you can focus "
+                    "on patient care."
+                ),
             },
             {
                 "title": "Objection Handling",
                 "icon": "shield",
-                "content": "Objection: \"We already have a recruiter.\"\nResponse: We complement existing recruiters. We focus specifically on healthcare staffing with candidates who are pre-trained in clinical workflows, so there's no overlap.\n\nObjection: \"We can't afford it right now.\"\nResponse: Many of our clients actually save money because our temp-to-perm model eliminates costly bad hires and reduces overtime costs.\n\nObjection: \"We're not hiring right now.\"\nResponse: That's perfectly fine. Many practices work with us proactively so when a position does open up, they have qualified candidates ready within 48 hours instead of spending weeks searching.\n\nObjection: \"We've had bad experiences with staffing agencies.\"\nResponse: We're not a general staffing agency — we only place healthcare professionals, and every candidate goes through a specialty-specific skills assessment.",
+                "content": (
+                    'Objection: "We already have a recruiter."\n'
+                    "Response: We complement existing recruiters with healthcare specialists.\n\n"
+                    'Objection: "We can\'t afford it right now."\n'
+                    "Response: Many of our clients save money via temp-to-perm placements that "
+                    "prevent costly bad hires.\n\n"
+                    'Objection: "We\'re not hiring right now."\n'
+                    "Response: Many practices work with us proactively so they have qualified "
+                    "candidates ready when a position opens."
+                ),
             },
             {
                 "title": "Closing",
                 "icon": "check",
-                "content": f"I'd love to set up a quick 15-minute call to learn more about {name} and share how we've helped similar practices in your area. We also offer a free staffing assessment where we review your current team structure and identify areas where we could add value. Would Tuesday or Wednesday work better for a brief chat?",
+                "content": (
+                    f"I'd love to set up a quick 15-minute call to learn more about {name}"
+                    f"{city_phrase} and share how we've helped similar practices. Would Tuesday "
+                    "or Wednesday work for a brief chat?"
+                ),
             },
         ]
     }
