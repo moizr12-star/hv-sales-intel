@@ -60,13 +60,13 @@ async def test_get_current_user_401_when_no_token():
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_returns_profile(sample_rep_profile):
+async def test_get_current_user_returns_profile(sample_sdr_profile):
     token = "abc.def.ghi"
     req = MagicMock()
     req.cookies = {"sb-proj-auth-token": f'{{"access_token":"{token}"}}'}
 
     auth_user = MagicMock()
-    auth_user.id = sample_rep_profile["id"]
+    auth_user.id = sample_sdr_profile["id"]
 
     client = MagicMock()
     client.auth.get_user.return_value = MagicMock(user=auth_user)
@@ -74,12 +74,12 @@ async def test_get_current_user_returns_profile(sample_rep_profile):
     table.select.return_value = table
     table.eq.return_value = table
     table.single.return_value = table
-    table.execute.return_value = MagicMock(data=sample_rep_profile)
+    table.execute.return_value = MagicMock(data=sample_sdr_profile)
     client.table.return_value = table
 
     with patch("src.auth.get_admin_client", return_value=client):
         result = await get_current_user(req)
-    assert result == sample_rep_profile
+    assert result == sample_sdr_profile
 
 
 @pytest.mark.asyncio
@@ -121,7 +121,7 @@ async def test_require_admin_passes_for_admin(sample_admin_profile):
 
 
 @pytest.mark.asyncio
-async def test_require_admin_403_for_rep(sample_rep_profile):
+async def test_require_admin_403_for_rep(sample_sdr_profile):
     with pytest.raises(HTTPException) as exc:
-        await require_admin(sample_rep_profile)
+        await require_admin(sample_sdr_profile)
     assert exc.value.status_code == 403

@@ -96,7 +96,7 @@ class CreateUserRequest(BaseModel):
     email: str
     name: str
     password: str
-    role: str = "rep"
+    role: str = "sdr"
 
 
 @app.get("/api/admin/users")
@@ -118,8 +118,17 @@ def list_users(admin: dict = Depends(require_admin)):
 
 @app.post("/api/admin/users")
 def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
-    if body.role not in ("admin", "rep"):
-        raise HTTPException(status_code=400, detail="role must be 'admin' or 'rep'")
+    from src.validators import validate_email, validate_password
+
+    try:
+        validate_email(body.email)
+        validate_password(body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if body.role not in ("admin", "sdr"):
+        raise HTTPException(status_code=400, detail="role must be 'admin' or 'sdr'")
+
     client = get_admin_client()
     try:
         created = client.auth.admin.create_user({
@@ -129,7 +138,10 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
             "user_metadata": {"name": body.name},
         })
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        msg = str(e)
+        if "already registered" in msg.lower() or "already exists" in msg.lower():
+            raise HTTPException(status_code=400, detail="Email already in use.")
+        raise HTTPException(status_code=400, detail=msg)
 
     user_id = created.user.id
     if body.role == "admin":

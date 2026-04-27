@@ -24,16 +24,16 @@ def test_enrich_requires_auth():
     assert resp.status_code == 401
 
 
-def test_enrich_returns_404_when_practice_missing(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_enrich_returns_404_when_practice_missing(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     with patch("api.index.get_practice", return_value=None):
         client = TestClient(app)
         resp = client.post("/api/practices/missing/enrich")
     assert resp.status_code == 404
 
 
-def test_enrich_happy_path_sets_pending_and_returns_null_warning(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_enrich_happy_path_sets_pending_and_returns_null_warning(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     existing = {"place_id": "abc", "name": "Test", "enrichment_status": None}
     updated = {**existing, "enrichment_status": "pending"}
 
@@ -52,8 +52,8 @@ def test_enrich_happy_path_sets_pending_and_returns_null_warning(sample_rep_prof
     assert first_call_fields["enrichment_status"] == "pending"
 
 
-def test_enrich_returns_warning_when_clay_not_configured(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_enrich_returns_warning_when_clay_not_configured(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     existing = {"place_id": "abc", "name": "Test", "enrichment_status": None}
 
     with patch("api.index.get_practice", return_value=existing):
@@ -67,8 +67,8 @@ def test_enrich_returns_warning_when_clay_not_configured(sample_rep_profile):
     assert body["clay_warning"] == "Clay not configured. Enrichment skipped."
 
 
-def test_enrich_flips_to_failed_and_warns_on_http_error(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_enrich_flips_to_failed_and_warns_on_http_error(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     existing = {"place_id": "abc", "name": "Test", "enrichment_status": None}
     failed = {**existing, "enrichment_status": "failed"}
 

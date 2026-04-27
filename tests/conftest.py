@@ -2,12 +2,12 @@ import pytest
 
 
 @pytest.fixture
-def sample_rep_profile() -> dict:
+def sample_sdr_profile() -> dict:
     return {
         "id": "00000000-0000-0000-0000-000000000001",
-        "email": "rep@example.com",
-        "name": "Test Rep",
-        "role": "rep",
+        "email": "sdr@example.com",
+        "name": "Test SDR",
+        "role": "sdr",
         "created_at": "2026-04-22T00:00:00Z",
     }
 

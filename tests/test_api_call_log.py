@@ -23,8 +23,8 @@ def test_call_log_requires_auth():
     assert resp.status_code == 401
 
 
-def test_call_log_happy_path_returns_practice_and_null_warning(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_call_log_happy_path_returns_practice_and_null_warning(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     fake_practice = {"place_id": "abc", "name": "Test", "call_count": 1, "call_notes": "[ts] Test Rep: polished"}
 
     with patch("api.index.append_call_note", AsyncMock(return_value=(fake_practice, None))):
@@ -37,8 +37,8 @@ def test_call_log_happy_path_returns_practice_and_null_warning(sample_rep_profil
     assert body["sf_warning"] is None
 
 
-def test_call_log_returns_warning_on_sf_failure(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_call_log_returns_warning_on_sf_failure(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     fake_practice = {"place_id": "abc", "name": "Test", "call_count": 1}
     warning = "Salesforce sync failed: 401 Unauthorized. Local log saved."
 
@@ -51,8 +51,8 @@ def test_call_log_returns_warning_on_sf_failure(sample_rep_profile):
     assert body["sf_warning"] == warning
 
 
-def test_call_log_returns_404_when_practice_missing(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_call_log_returns_404_when_practice_missing(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
 
     with patch("api.index.append_call_note", AsyncMock(side_effect=LookupError("Practice not found: missing"))):
         client = TestClient(app)
@@ -61,8 +61,8 @@ def test_call_log_returns_404_when_practice_missing(sample_rep_profile):
     assert resp.status_code == 404
 
 
-def test_call_log_accepts_empty_note(sample_rep_profile):
-    _override_user(sample_rep_profile)
+def test_call_log_accepts_empty_note(sample_sdr_profile):
+    _override_user(sample_sdr_profile)
     fake_practice = {"place_id": "abc", "name": "Test", "call_count": 1}
 
     called_with_note: dict = {}
