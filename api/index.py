@@ -35,11 +35,13 @@ from src.scriptgen import generate_script
 from src.settings import settings as app_settings
 from src.storage import (
     add_tags,
+    get_cached_search,
     get_practice,
     insert_email_message,
     list_email_messages,
     list_outbound_message_ids,
     query_practices,
+    save_search_cache,
     update_practice_analysis,
     update_practice_fields,
     upsert_practices,
@@ -625,6 +627,13 @@ class SearchRequest(BaseModel):
 
 @app.post("/api/practices/search")
 async def search(body: SearchRequest, user: dict = Depends(get_current_user)):
+    # Repeat-query fast path: serve from DB if we ran the same query in the
+    # last 24h. `refresh=True` forces a fresh Google Places call.
+    if not body.refresh:
+        cached = get_cached_search(body.query)
+        if cached:
+            return {"practices": cached, "count": len(cached), "upserted": 0, "cached": True}
+
     practices = await search_places(body.query)
     upserted = upsert_practices(practices, touched_by=user["id"])
 
@@ -635,6 +644,8 @@ async def search(body: SearchRequest, user: dict = Depends(get_current_user)):
     for p in practices:
         row = get_practice(p.place_id)
         enriched.append(row if row else p.model_dump())
+
+    save_search_cache(body.query, [p.place_id for p in practices])
 
     return {
         "practices": enriched,

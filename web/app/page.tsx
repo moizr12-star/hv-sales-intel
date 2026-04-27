@@ -108,7 +108,7 @@ function PageContent() {
     if (!filters.q.trim()) return
     setIsRescanning(true)
     try {
-      const results = await searchPractices(filters.q)
+      const results = await searchPractices(filters.q, true)  // force fresh
       setPractices(results)
       setFilters({ sel: "" })
     } finally {

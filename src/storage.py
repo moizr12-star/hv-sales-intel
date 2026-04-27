@@ -198,6 +198,70 @@ def list_email_messages(practice_id: int) -> list[dict]:
     return result.data or []
 
 
+def get_cached_search(query: str, max_age_hours: int = 24) -> list[dict] | None:
+    """Return cached practices for this query if a recent entry exists.
+
+    Returns None if no cache or cache is stale. The cache key is a
+    lowercased + whitespace-collapsed version of the query so trivial
+    formatting differences still hit the same row.
+    """
+    norm = " ".join((query or "").lower().split())
+    if not norm:
+        return None
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        result = (
+            client.table("searches").select("place_ids,searched_at")
+            .eq("query_norm", norm).maybe_single().execute()
+        )
+    except Exception:
+        return None
+    if not result or not result.data:
+        return None
+
+    from datetime import datetime, timedelta, timezone
+    searched_at = result.data.get("searched_at")
+    if searched_at:
+        try:
+            ts = datetime.fromisoformat(str(searched_at).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if datetime.now(timezone.utc) - ts > timedelta(hours=max_age_hours):
+            return None
+
+    place_ids: list[str] = result.data.get("place_ids") or []
+    if not place_ids:
+        return []
+    rows = (
+        client.table("practices").select(PROFILE_JOIN_SELECT)
+        .in_("place_id", place_ids).execute()
+    )
+    return [_flatten_attribution(r) for r in (rows.data or [])]
+
+
+def save_search_cache(query: str, place_ids: list[str]) -> None:
+    """Upsert a cache row for this query → place_ids."""
+    norm = " ".join((query or "").lower().split())
+    if not norm or not place_ids:
+        return
+    client = _get_client()
+    if not client:
+        return
+    from datetime import datetime, timezone
+    row = {
+        "query_norm": norm,
+        "query_raw": query,
+        "place_ids": place_ids,
+        "searched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        client.table("searches").upsert(row, on_conflict="query_norm").execute()
+    except Exception:
+        return
+
+
 def add_tags(place_id: str, new_tags: list[str]) -> None:
     """Append tags to a practice's tags array, deduped. No-op if list empty.
 

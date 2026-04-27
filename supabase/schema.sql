@@ -134,6 +134,16 @@ create index if not exists idx_practices_assigned_to on practices (assigned_to);
 alter table practices add column if not exists website_doctor_name text;
 alter table practices add column if not exists website_doctor_phone text;
 
+-- Search query cache (avoid re-billing Google for repeated queries)
+create table if not exists searches (
+  id bigserial primary key,
+  query_norm text unique not null,
+  query_raw text not null,
+  place_ids text[] not null,
+  searched_at timestamptz default now()
+);
+create index if not exists idx_searches_query_norm on searches (query_norm);
+
 -- Backfill tags from existing state (idempotent — only writes empty tags)
 update practices set tags = coalesce((
   select array_agg(distinct t) from unnest(array[

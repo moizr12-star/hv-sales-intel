@@ -24,21 +24,35 @@ async def search_places(query: str) -> list[Practice]:
 
 
 async def _google_search(query: str) -> list[Practice]:
-    """Call Google Places Text Search (New) API."""
+    """Call Google Places Text Search (New) API, paginating up to 60 results.
+
+    Google caps maxResultCount at 20 per request but supports up to 60 total
+    via nextPageToken (3 pages). Each page is a separate billable call.
+    """
     url = "https://places.googleapis.com/v1/places:searchText"
+    # nextPageToken is returned only when fieldMask explicitly requests it.
     headers = {
         "X-Goog-Api-Key": settings.google_maps_api_key,
-        "X-Goog-FieldMask": FIELD_MASK,
+        "X-Goog-FieldMask": f"{FIELD_MASK},nextPageToken",
         "Content-Type": "application/json",
     }
-    body = {"textQuery": query, "maxResultCount": 20}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, json=body, headers=headers, timeout=15)
-        resp.raise_for_status()
+    all_places: list[dict] = []
+    page_token: str | None = None
+    async with httpx.AsyncClient(timeout=15) as client:
+        for _ in range(3):  # cap at 3 pages = 60 results
+            body: dict = {"textQuery": query, "maxResultCount": 20}
+            if page_token:
+                body["pageToken"] = page_token
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            all_places.extend(data.get("places", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
 
-    results = resp.json().get("places", [])
-    return [_map_google_place(p) for p in results]
+    return [_map_google_place(p) for p in all_places]
 
 
 async def get_place(place_id: str, fallback: Practice | None = None) -> Practice | None:

@@ -21,12 +21,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-export async function searchPractices(query: string): Promise<Practice[]> {
+export async function searchPractices(
+  query: string,
+  refresh: boolean = false,
+): Promise<Practice[]> {
   try {
     const data = await apiFetch<{ practices: Practice[] }>("/api/practices/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, refresh: true }),
+      body: JSON.stringify({ query, refresh }),
     })
     return data.practices
   } catch {
