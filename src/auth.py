@@ -98,6 +98,8 @@ async def get_current_user(request: Request) -> dict:
     )
     if not result.data:
         raise HTTPException(status_code=403, detail="No profile for this user")
+    if result.data.get("disabled_at"):
+        raise HTTPException(status_code=401, detail="Account disabled")
     return result.data
 
 

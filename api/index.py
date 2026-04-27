@@ -168,6 +168,72 @@ def delete_user(user_id: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+class PatchUserRequest(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    disabled: bool | None = None  # True to disable, False to enable
+
+
+@app.patch("/api/admin/users/{user_id}")
+def patch_user(
+    user_id: str,
+    body: PatchUserRequest,
+    admin: dict = Depends(require_admin),
+):
+    """Edit name/role and/or disable/enable a user.
+
+    Same bootstrap-admin gating as reset-password: only the bootstrap admin
+    can edit or disable another admin. Cannot disable self.
+    """
+    from src.auth import is_bootstrap_admin
+
+    client = get_admin_client()
+    target = (
+        client.table("profiles")
+        .select("*")
+        .eq("id", user_id)
+        .single()
+        .execute()
+        .data
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Self-disable guard
+    if body.disabled is True and user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot disable self")
+
+    # Bootstrap-admin gate: protects edits/disables on other admins
+    target_is_admin = target.get("role") == "admin"
+    becoming_admin = body.role == "admin"
+    if (target_is_admin or becoming_admin) and not is_bootstrap_admin(admin) and user_id != admin["id"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the bootstrap admin can edit or disable another admin (or promote to admin).",
+        )
+
+    fields: dict = {}
+    if body.name is not None:
+        fields["name"] = body.name
+    if body.role is not None:
+        if body.role not in ("admin", "sdr"):
+            raise HTTPException(status_code=400, detail="role must be 'admin' or 'sdr'")
+        fields["role"] = body.role
+    if body.disabled is not None:
+        fields["disabled_at"] = (
+            datetime.now(timezone.utc).isoformat() if body.disabled else None
+        )
+
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    try:
+        result = client.table("profiles").update(fields).eq("id", user_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result.data[0] if result.data else target
+
+
 class ResetPasswordRequest(BaseModel):
     new_password: str
 

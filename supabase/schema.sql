@@ -47,6 +47,7 @@ create table if not exists profiles (
   email text not null,
   name text,
   role text not null default 'sdr' check (role in ('admin', 'sdr')),
+  disabled_at timestamptz,
   created_at timestamptz default now()
 );
 
