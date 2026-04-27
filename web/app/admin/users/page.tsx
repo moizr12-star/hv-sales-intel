@@ -311,9 +311,14 @@ export default function AdminUsersPage() {
                               {disabled ? "Enable" : "Disable"}
                             </button>
                             <button
-                              onClick={() => handleDelete(u.id)}
-                              className="text-rose-600 hover:text-rose-800 align-middle"
-                              title="Delete user"
+                              onClick={() => !blocked && handleDelete(u.id)}
+                              disabled={blocked}
+                              title={blocked
+                                ? "Only the bootstrap admin can delete another admin"
+                                : "Delete user"}
+                              className={`align-middle ${blocked
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-rose-600 hover:text-rose-800"}`}
                             >
                               <Trash2 className="w-4 h-4 inline" />
                             </button>

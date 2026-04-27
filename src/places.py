@@ -131,24 +131,48 @@ HEALTHCARE_TYPES = frozenset({
     "veterinary_care",
 })
 
+# Hard-disqualifiers — if Google tags the place with any of these, it's
+# definitely not healthcare regardless of what's in the name (e.g.
+# "Doctors Café", "Dental Bar Restaurant").
+NEGATIVE_TYPES = frozenset({
+    "cafe", "coffee_shop", "restaurant", "food", "bar", "bakery",
+    "meal_takeaway", "meal_delivery", "night_club",
+    "gym", "fitness_center", "beauty_salon", "hair_care", "spa",
+    "store", "supermarket", "shopping_mall", "clothing_store",
+    "convenience_store", "grocery_or_supermarket", "department_store",
+    "lodging", "tourist_attraction", "park", "school", "university",
+    "car_dealer", "car_repair", "car_rental", "gas_station",
+    "real_estate_agency", "insurance_agency", "lawyer", "bank", "atm",
+})
+
+# Keywords in the place name that strongly suggest healthcare. Note: we do
+# NOT include the bare word "doctor" because it appears in restaurant /
+# café names ("Doctors Café"). The phrase "Dr." with a trailing dot is a
+# stronger signal because it almost always precedes a person's name.
 HEALTHCARE_NAME_KEYWORDS = (
-    "clinic", "hospital", "medical", "health", "dental", "doctor", "dr.",
-    "dentist", "orthodont", "psychiatr", "psycholog", "mental health",
-    "behavioral health", "primary care", "urgent care", "physiotherap",
-    "chiropract", "wellness", "rehab", "therapy", "podiatr", "dermatolog",
-    "optomet", "ophthalmolog", "veterinar", "pediatr", "obgyn", "obstetr",
+    "clinic", "hospital", "medical", "dental", "dentist", "orthodont",
+    "psychiatr", "psycholog", "mental health", "behavioral health",
+    "primary care", "urgent care", "physiotherap", "chiropract",
+    "rehab", "physiotherapy", "podiatr", "dermatolog", "optomet",
+    "ophthalmolog", "veterinar", "pediatr", "obgyn", "obstetr",
     "gynecolog", "cardiolog", "neurolog", "oncolog", "radiolog",
+    "dr.", "md ", "m.d.", "dds", "d.d.s.",
 )
 
 
 def _is_healthcare(types: list[str], name: str) -> bool:
     """True if the place looks like a healthcare practice we'd want to target.
 
-    Source of truth is Google's `types`; falls back to keyword check on the
-    display name because solo practitioners often only get the generic 'doctor'
-    or 'point_of_interest' type.
+    Logic:
+      1. If Google flags it as a café / restaurant / shop / etc → reject.
+      2. If Google flags it as a healthcare type → accept.
+      3. Otherwise inspect the display name (solo practitioners often only
+         get the generic 'doctor' or 'point_of_interest' type).
     """
-    if HEALTHCARE_TYPES & set(types or []):
+    type_set = set(types or [])
+    if NEGATIVE_TYPES & type_set:
+        return False
+    if HEALTHCARE_TYPES & type_set:
         return True
     name_lower = (name or "").lower()
     return any(k in name_lower for k in HEALTHCARE_NAME_KEYWORDS)

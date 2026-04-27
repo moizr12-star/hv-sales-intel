@@ -162,9 +162,26 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
 
 @app.delete("/api/admin/users/{user_id}")
 def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    from src.auth import is_bootstrap_admin
+
     if user_id == admin["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete self")
+
     client = get_admin_client()
+    target = (
+        client.table("profiles").select("*")
+        .eq("id", user_id).single().execute().data
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Only the bootstrap admin can delete another admin.
+    if target.get("role") == "admin" and not is_bootstrap_admin(admin):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the bootstrap admin can delete another admin.",
+        )
+
     try:
         client.auth.admin.delete_user(user_id)
     except Exception as e:
