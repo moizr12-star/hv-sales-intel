@@ -31,12 +31,18 @@ function PageContent() {
   const [filters, setFilters] = useUrlState()
   const sidebarRef = useRef<HTMLDivElement>(null)
 
-  // Hydrate practices: snapshot first (synchronous), then DB.
-  const [practices, setPractices] = useState<Practice[]>(() => {
+  // Hydrate practices: server uses mockPractices (so SSR + first client paint
+  // match), then a client-only effect swaps in sessionStorage snapshot if present.
+  const [practices, setPractices] = useState<Practice[]>(mockPractices)
+  const [hydratedFromDb, setHydratedFromDb] = useState<boolean>(false)
+
+  useEffect(() => {
     const snap = readSnapshot()
-    return snap?.practices ?? mockPractices
-  })
-  const [hydratedFromDb, setHydratedFromDb] = useState<boolean>(() => !!readSnapshot())
+    if (snap?.practices && snap.practices.length > 0) {
+      setPractices(snap.practices)
+      setHydratedFromDb(true)
+    }
+  }, [])
 
   const [isLoading, setIsLoading] = useState(false)
   const [isRescanning, setIsRescanning] = useState(false)
