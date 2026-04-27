@@ -135,7 +135,7 @@ alter table practices add column if not exists website_doctor_name text;
 alter table practices add column if not exists website_doctor_phone text;
 
 -- Backfill tags from existing state (idempotent — only writes empty tags)
-update practices set tags = (
+update practices set tags = coalesce((
   select array_agg(distinct t) from unnest(array[
     case when lead_score is not null then 'RESEARCHED' end,
     case when call_script is not null then 'SCRIPT_READY' end,
@@ -145,4 +145,4 @@ update practices set tags = (
     case when status = 'CLOSED WON' then 'CLOSED_WON' end,
     case when status = 'CLOSED LOST' then 'CLOSED_LOST' end
   ]) t where t is not null
-) where tags = '{}'::text[];
+), '{}'::text[]) where tags = '{}'::text[];
