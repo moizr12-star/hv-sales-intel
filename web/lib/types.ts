@@ -52,6 +52,17 @@ export interface Practice {
   owner_linkedin: string | null
   enrichment_status: "pending" | "enriched" | "failed" | null
   enriched_at: string | null
+
+  // Tags + assignment
+  tags: string[]
+  assigned_to: string | null
+  assigned_at: string | null
+  assigned_by: string | null
+  assigned_to_name?: string | null
+
+  // Website-extracted doctor info
+  website_doctor_name: string | null
+  website_doctor_phone: string | null
 }
 
 export interface EmailMessage {

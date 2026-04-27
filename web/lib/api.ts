@@ -132,7 +132,7 @@ export async function regenerateScript(placeId: string): Promise<Script> {
 
 export async function updatePractice(
   placeId: string,
-  fields: { status?: string; notes?: string }
+  fields: { status?: string; notes?: string; email?: string; assigned_to?: string }
 ): Promise<Practice> {
   try {
     return await apiFetch<Practice>(`/api/practices/${placeId}`, {
@@ -274,6 +274,25 @@ export async function enrichPractice(
     `/api/practices/${placeId}/enrich`,
     { method: "POST" },
   )
+}
+
+export interface AdminUserSummary {
+  id: string
+  email: string
+  name: string | null
+  role: "admin" | "sdr"
+}
+
+export async function listUsers(): Promise<AdminUserSummary[]> {
+  try {
+    const data = await apiFetch<{ users?: AdminUserSummary[] } | AdminUserSummary[]>(
+      "/api/admin/users",
+    )
+    if (Array.isArray(data)) return data
+    return data.users ?? []
+  } catch {
+    return []
+  }
 }
 
 export async function changeMyPassword(
