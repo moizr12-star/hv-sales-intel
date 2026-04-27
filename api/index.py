@@ -58,9 +58,15 @@ app.add_middleware(
 async def bootstrap_admin_on_startup():
     """If no admin exists and BOOTSTRAP_ADMIN_* env vars are set, seed one."""
     from src.settings import settings
+    from src.validators import validate_password
     if not (settings.supabase_url and settings.supabase_service_role_key):
         return
     if not (settings.bootstrap_admin_email and settings.bootstrap_admin_password):
+        return
+    try:
+        validate_password(settings.bootstrap_admin_password)
+    except ValueError as e:
+        print(f"[bootstrap] BOOTSTRAP_ADMIN_PASSWORD invalid: {e} — admin not seeded.")
         return
     try:
         client = get_admin_client()
